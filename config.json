@@ -1,0 +1,28 @@
+﻿{
+	"server": {
+        "type" : "MSSQL",
+        "driver" : "QODBC",
+		"address" : "192.168.200.41",
+		"user" : "wwShiftLists",
+		"password" : 1,
+		"db" : "Runtime",
+		"provider" : "INSQL"
+	},
+	"output": {
+		"format" : "html",
+		"path" : ""		
+    },
+	"options": {
+        "shift" : {
+           "start" : "8:00",
+           "stop" : "20:00",
+           "count" : 2
+        },
+        "tags" : [
+           "Reactor_001.ReactTemp",
+           "Reactor_001.ReactLevel",
+           "StorageTank_001.ProdLevel"
+        ],
+		"snapshot" : "cycle",
+	}
+}
