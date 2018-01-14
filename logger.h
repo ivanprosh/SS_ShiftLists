@@ -41,7 +41,7 @@ enum severity_level
 class EventLog
 {
 public:
-    friend class Loki::CreateUsingNew<EventLog>;
+    friend struct Loki::CreateUsingNew<EventLog>;
     inline void LogEvent(const severity_level level, const char* message){
         BOOST_LOG_SEV(m_logger, level) << message;
     }

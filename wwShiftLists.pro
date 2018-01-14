@@ -1,4 +1,4 @@
-#using boost log static library
+#using boost log dynamic library
 include(boost.pri)
 
 QT -= gui
@@ -7,12 +7,11 @@ QT += core sql
 CONFIG += c++11 console
 CONFIG -= app_bundle
 
-
-build_pass:CONFIG(debug, debug|release){
+CONFIG(debug, debug|release){
     DEFINES += DEBUG
-    BUILD_TYPE = debug
+    win32:BUILD_TYPE = debug
 } else {
-    BUILD_TYPE = release
+    win32:BUILD_TYPE = release
 }
 
 deployment.path = $$OUT_PWD/$${BUILD_TYPE}
@@ -45,4 +44,4 @@ HEADERS += \
     singleton.h \
     sys_error.h
 
-DISTFILES +=
+#message($$DEFINES)
