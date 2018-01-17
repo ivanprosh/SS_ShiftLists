@@ -9,13 +9,10 @@
 #include <QList>
 #include <QMessageBox>
 #include <QSet>
-#if QT_VERSION >= 0x040600
 #include <QScopedPointer>
-#else
-#include <QSharedPointer>
-#endif
 #include <QString>
 #include <QVector>
+
 #ifdef Q_CC_MSVC
 #include <math.h>
 #else
@@ -37,7 +34,6 @@ constexpr typename std::underlying_type<E>::type
 toUType(E enumerator) noexcept{
     return static_cast<typename std::underlying_type<E>::type>(enumerator);
 }
-
 
 void information(QWidget *parent, const QString &title,
         const QString &text, const QString &detailedText=QString());

@@ -2,13 +2,16 @@
 //#include "sys_messages.h"
 #include "sqlworker.h"
 #include "logger.h"
+#include "sys_error.h"
 
-#include <QCoreApplication>
+#include <QApplication>
 #include <QCommandLineParser>
 #include <QDebug>
 #include <QTextCodec>
 
-const QString defaultconfigFile("./config.json");
+
+const QString defaultconfigFileName("config.json");
+
 
 const QString testQuery(
         "SET QUOTED_IDENTIFIER OFF "
@@ -81,7 +84,7 @@ void parseCommandLine(QCommandLineParser &parser, ShiftManager& controlClass){
       } else {
           _logger::Instance().LogEvent(EventLogScope::notification,
                                        QString("Read file path from application work dir: %1").arg(parser.value("f")).toUtf8());
-          controlClass.read(defaultconfigFile);
+          controlClass.read(QGuiApplication::applicationDirPath() + "/" + defaultconfigFileName);
       }
 
       if (parser.isSet("p")){
@@ -107,26 +110,29 @@ void parseCommandLine(QCommandLineParser &parser, ShiftManager& controlClass){
 
 }
 
+using namespace SYS;
+
 int main(int argc, char *argv[])
 {
-    QCoreApplication a(argc, argv);
-    QCoreApplication::setApplicationName("Shift lists print fo Wonderware projects");
-    QCoreApplication::setApplicationVersion("1.0");
+    QApplication a(argc, argv);
+    QApplication::setApplicationName("Shift lists print fo Wonderware projects");
+    QApplication::setApplicationVersion("1.0");
+
+    //register type for use in slot-signal model
+    qRegisterMetaType<QError>();
 
     QCommandLineParser parser;
     ShiftManager shiftManager;
+
+    //SYS::warning(nullptr, "Error", "Failed to load");
 
     try {
         //parse commandLine par
         parseCommandLine(parser,shiftManager);
 
         //create SQL worker and connect to database
-        shiftManager.createWorker();
-        //
-        //parseCommandLine(parser);
-        //if(!shiftManager.getWorker()->exec(testQuery2.arg("Reactor_001"))){
-           //qDebug() << " query failed: " << testQuery2;
-        //}
+        //shiftManager.createSQLWorker();
+
     }
     catch (std::exception &error) {
         //SYS::warning(this, tr("Error"), tr("Failed to load %1: %2")
@@ -135,5 +141,9 @@ int main(int argc, char *argv[])
         return 0;
     }
 
+    //Init timers and other connections
+    shiftManager.process();
+
+    //return 0;
     return a.exec();
 }

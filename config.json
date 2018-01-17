@@ -2,7 +2,7 @@
 	"server": {
         "type" : "MSSQL",
         "driver" : "QODBC",
-		"address" : "192.168.200.41",
+        "address" : "192.168.200.42",
 		"user" : "wwShiftLists",
 		"password" : 1,
 		"db" : "Runtime",
@@ -11,6 +11,7 @@
 
 	"output": {
 		"format" : "html",
+        "device" : "file",
 		"path" : ""		
     },
 
@@ -18,9 +19,12 @@
         "shift" : {
            "start" : "8:00",
            "stop" : "20:00",
-           "isSingle" : 0
+           "count" : 2,
+           "interval" : 60
         },
-        "snapshot" : "cycle"
+        "scada" : "wonderware",
+        "printTimeOffset" : 0,
+        "specDateTimeFormat" : "yyyy-MM-dd hh:mm:ss.zz"
     },
 
     "tags" : [

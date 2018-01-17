@@ -1,6 +1,6 @@
 #include "sqlworker.h"
-#include "sys_error.h"
 #include "logger.h"
+#include "docpolicies.h"
 
 #include <QDebug>
 #include <QSqlQuery>
@@ -12,14 +12,13 @@
 //#include <boost/log/common.hpp>
 //#include <boost/log/sources/logger.hpp>
 //namespace src = boost::log::sources;
-
 //extern src::logger lg;
 
 const QHash<QString,QString> SQLWorker::connString {
     {"MSSQL","DRIVER={SQL Server};SERVER=%1;DATABASE=%2;UID=%3;PWD=%4;Trusted_Connection=no; WSID=."}
 };
 
-SQLWorker::SQLWorker(const QVariantMap &connPar, QString queryPattern): QObject(), m_queryPattern(queryPattern),
+SQLWorker::SQLWorker(const QVariantMap &connPar): QObject(),
     m_params{{"type",""},
             {"driver",""},
             {"address",""},
@@ -27,6 +26,7 @@ SQLWorker::SQLWorker(const QVariantMap &connPar, QString queryPattern): QObject(
             {"password",""},
             {"db",""},
             {"provider",""}} {
+
     foreach (auto key, connPar.keys()) {
         if(!supportedParams().contains(key))
             throw SYS::Error("Unsupported params. Check config file SQL settings section");
@@ -53,33 +53,36 @@ void SQLWorker::connect()
     if(m_connString.isEmpty() || m_database.isOpen())
         return;
 
-    _logger::Instance().LogEvent(EventLogScope::notification,
-                                  QString("Atempt to connect to SQL Server, connection string: %1").arg(m_connString).toUtf8());
+    SYS_LOG(EventLogScope::notification,
+            QString("Atempt to connect to SQL Server, connection string: %1").arg(m_connString).toUtf8());
+
     m_database.setDatabaseName(m_connString);
     if(!m_database.open()){
         //exception in slot - not worked, only write in log
-        _logger::Instance().LogEvent(EventLogScope::error,
-                       QString("SQL error: %1").arg(m_database.lastError().text()).toUtf8());
-        emit error(ConnectionError);
-        //throw::SYS::Error(m_database.lastError() + ". \nConnection string is " + m_connString);
+        //_logger::Instance().LogEvent(EventLogScope::error,
+        //               QString("SQL error: %1").arg(m_database.lastError().text()).toUtf8());
+
+        emit error(SYS::QError(EventLogScope::error,
+                               SYS::QError::Type::ConnectionError,
+                               QString("SQL error: %1").arg(m_database.lastError().text())));
         return;
     }
-
+    //m_query = QSqlQuery(m_database);
     emit connected();
 }
 
-bool SQLWorker::exec(QSqlQuery &query)
+bool SQLWorker::exec(QString &queryString)
 {
-    //QSqlQuery queryClass;
+    QSqlQuery query;
 
-    _logger::Instance().LogEvent(EventLogScope::notification, "Sending query");
+    _logger::Instance().LogEvent(EventLogScope::notification,
+                                 QString("Sending query: %1").arg(queryString).toUtf8());
 
-    if(query.exec()){
-        //QSqlRecord rec = queryClass.record();
-        //qDebug() << rec.count();
-        //while(queryClass.next()){
-            //qDebug() << queryClass.value(rec.indexOf("DateTime")).toString();
-        //}
+    if(query.exec(queryString)){
+
+        if(query.next())
+            qDebug() << query.value(0);
+        _logger::Instance().LogEvent(EventLogScope::notification, "Query exec success.");
         return true;
     }
 

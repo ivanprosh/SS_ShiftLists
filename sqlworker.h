@@ -3,34 +3,34 @@
 
 #include <QVariantMap>
 #include <QSqlDatabase>
-#include <QSqlQuery>
+#include "sys_error.h"
 
-class QSqlQuery;
 class SQLWorker : public QObject
 {
     Q_OBJECT
 public:
-    enum Error {
+    enum class Error {
        ConnectionError
     };
-    SQLWorker(const QVariantMap& connPar, QString queryPattern);
+    Q_ENUMS(Error)
+
+    SQLWorker(const QVariantMap& connPar);
     QStringList supportedParams(){ return m_params.keys();}
+
     //карта строк подключения
     static const QHash<QString,QString> connString;
 
-    Q_ENUMS(Error)
 public slots:
     void connect();
-    bool exec(QSqlQuery& query);
+    bool exec(QString& query);
     //void onPrepareQuery(const QString& queryPattern);
 signals:
-    void error(SQLWorker::Error);
+    void error(SYS::QError);
     void connected();
 
 private:
     QString m_connString;
     QString m_queryPattern;
-    QSqlQuery m_query;
     QVariantMap m_params;
     QSqlDatabase m_database;
 };

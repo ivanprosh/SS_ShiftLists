@@ -1,8 +1,8 @@
 #using boost log dynamic library
 include(boost.pri)
 
-QT -= gui
-QT += core sql
+QT += gui
+QT += core sql widgets
 
 CONFIG += c++11 console
 CONFIG -= app_bundle
@@ -32,16 +32,26 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += main.cpp \
     shiftmanager.cpp \
     sqlworker.cpp \
-    #sys_messages.cpp \
+    sys_messages.cpp \
     logger.cpp \
-    singleton.cpp
+    singleton.cpp \
+    htmlshiftworker.cpp \
+    dbadapter.cpp
 
 HEADERS += \
     shiftmanager.h \
     sqlworker.h \
-    #sys_messages.h \
+    sys_messages.h \
     logger.h \
     singleton.h \
-    sys_error.h
+    sys_error.h \
+    docpolicies.h \
+    htmlshiftworker.h \
+    dbadapter.h \
+    typemsg.h
 
 #message($$DEFINES)
+
+DISTFILES += \
+    footer.html \
+    header.html

@@ -3,6 +3,9 @@
 
 #include <exception>
 #include <QString>
+#include <QMetaType>
+
+#include "typemsg.h"
 
 namespace SYS {
 
@@ -21,6 +24,29 @@ private:
     QByteArray charArray;
 };
 
+//using for signal-slot system
+class QError
+{
+public:
+    enum class Type {ConnectionError,ConfigurationError};
+    EventLogScope::severity_level level;
+    Type type;
+
+    QError(){}
+    explicit QError(EventLogScope::severity_level lvl,
+                    Type tpy,
+                    const QString& message) noexcept
+        :level(lvl),type(tpy),charArray(message.toUtf8()){}
+
+    const char *what() const noexcept {
+        return charArray.data();
+    }
+private:
+    QByteArray charArray;
+};
+
 }
+
+Q_DECLARE_METATYPE(SYS::QError)
 
 #endif // SYS_ERROR_H
