@@ -28,7 +28,7 @@ private:
 class QError
 {
 public:
-    enum class Type {ConnectionError,ConfigurationError};
+    enum class Type {ConnectionError,ConfigurationError,InternalError,ExchangeError,DataSourceError};
     EventLogScope::severity_level level;
     Type type;
 

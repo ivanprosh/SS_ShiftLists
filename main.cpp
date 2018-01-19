@@ -60,7 +60,8 @@ void parseCommandLine(QCommandLineParser &parser, ShiftManager& controlClass){
                   QCoreApplication::translate("main", "path")},
               // An option with a value
               {{"t", "time-for-execute"},
-                  QCoreApplication::translate("main", "<Date Time> then app scanning shifts."),
+                  QCoreApplication::translate("main", "<Date Time> then app scanning shifts.\n"
+                                                      " Format - yyyy-MM-dd hh:mm:ss. (2018-01-12 18:00:23)"),
                   QCoreApplication::translate("main", "date time")},
           });
 
@@ -96,6 +97,10 @@ void parseCommandLine(QCommandLineParser &parser, ShiftManager& controlClass){
       if (parser.isSet("t")){
           _logger::Instance().LogEvent(EventLogScope::notification,
                                         QString("Set specific execute time: %1").arg(parser.value("t")).toUtf8());
+          QDateTime dt = QDateTime::fromString(parser.value("t"));
+          if(!dt.isValid())
+              throw SYS::Error("Format DateTime (-t) not recognized, see --help");
+          controlClass.setSpecDateTime(dt);
       }
 
       const QStringList args = parser.positionalArguments();
@@ -124,8 +129,6 @@ int main(int argc, char *argv[])
     QCommandLineParser parser;
     ShiftManager shiftManager;
 
-    //SYS::warning(nullptr, "Error", "Failed to load");
-
     try {
         //parse commandLine par
         parseCommandLine(parser,shiftManager);
@@ -142,7 +145,7 @@ int main(int argc, char *argv[])
     }
 
     //Init timers and other connections
-    shiftManager.process();
+    shiftManager.start();
 
     //return 0;
     return a.exec();

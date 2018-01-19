@@ -34,7 +34,9 @@ SQLWorker::SQLWorker(const QVariantMap &connPar): QObject(),
     }
     if(!m_params.value("type").toString().isEmpty() &&
             !m_params.value("driver").toString().isEmpty()){
-        m_database = QSqlDatabase::addDatabase(m_params.value("driver").toString());
+        m_database = QSqlDatabase::database(m_params.value("driver").toString());
+        if(!m_database.isValid())
+            m_database = QSqlDatabase::addDatabase(m_params.value("driver").toString());
         m_connString = connString.value(m_params.value("type").toString()).
                              arg(m_params.value("address").toString()). //SERVER
                              arg(m_params.value("db").toString()). //database
@@ -42,10 +44,16 @@ SQLWorker::SQLWorker(const QVariantMap &connPar): QObject(),
                              arg(m_params.value("password").toString()); //pass
 
         //execute slot after construct object complete and event loop is started
-        QTimer::singleShot(0,this,SLOT(connect()));
+        // QTimer::singleShot(0,this,SLOT(connect()));
         // And output...
         //BOOST_LOG(lg) << "Hello, World!";
     }
+}
+
+SQLWorker::~SQLWorker()
+{
+    SYS_LOG(EventLogScope::notification,"SQL worker dsrctr");
+    m_database.close();
 }
 
 void SQLWorker::connect()
@@ -58,36 +66,32 @@ void SQLWorker::connect()
 
     m_database.setDatabaseName(m_connString);
     if(!m_database.open()){
-        //exception in slot - not worked, only write in log
-        //_logger::Instance().LogEvent(EventLogScope::error,
-        //               QString("SQL error: %1").arg(m_database.lastError().text()).toUtf8());
-
         emit error(SYS::QError(EventLogScope::error,
                                SYS::QError::Type::ConnectionError,
                                QString("SQL error: %1").arg(m_database.lastError().text())));
         return;
     }
-    //m_query = QSqlQuery(m_database);
+
     emit connected();
 }
 
-bool SQLWorker::exec(QString &queryString)
+bool SQLWorker::exec(QueryTypes id,QString &queryString)
 {
     QSqlQuery query;
 
-    _logger::Instance().LogEvent(EventLogScope::notification,
-                                 QString("Sending query: %1").arg(queryString).toUtf8());
+    SYS_LOG(EventLogScope::notification,
+            QString("Sending query: %1").arg(queryString).toUtf8());
 
     if(query.exec(queryString)){
-
-        if(query.next())
-            qDebug() << query.value(0);
-        _logger::Instance().LogEvent(EventLogScope::notification, "Query exec success.");
+        SYS_LOG(EventLogScope::notification, "Query exec success.");
+        emit queryResult(id,query);
         return true;
     }
 
-    //exception in slot - not worked, only write in log
-   _logger::Instance().LogEvent(EventLogScope::warning, query.lastError().text().toUtf8());
+   //exception in slot - not worked, only write in log
+   emit error(SYS::QError(EventLogScope::error,
+                          SYS::QError::Type::ExchangeError,
+                          QString("SQL error: %1").arg(query.lastError().text())));
 
    return false;
 }

@@ -45,7 +45,7 @@ HEADERS += \
     logger.h \
     singleton.h \
     sys_error.h \
-    docpolicies.h \
+    #docpolicies.h \
     htmlshiftworker.h \
     dbadapter.h \
     typemsg.h

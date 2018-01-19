@@ -48,7 +48,8 @@ QVector< QPair<QString,QString> > WonderwareDBAdapter::getTagDescr(QSqlQuery &&q
 QVector<QVector<float> > WonderwareDBAdapter::getTagValuesMap(QSqlQuery &&query, QStringList& horizontalHeader)
 {
     if(!query.isValid())
-        SYS_LOG_WINDOW(EventLogScope::warning,qPrintable(QObject::tr("Tag values query is not valid")),&SYS::warning)
+        return QVector<QVector<float> >();
+        //SYS_LOG_WINDOW(EventLogScope::warning,qPrintable(QObject::tr("Tag values query is not valid")),&SYS::warning)
     QSqlRecord rec = query.record();
     QVector<QVector<float> > resultMap;
     horizontalHeader.clear();

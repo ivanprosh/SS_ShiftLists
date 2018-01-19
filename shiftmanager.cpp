@@ -11,6 +11,8 @@
 #include <QStringList>
 #include <QDate>
 #include <QThread>
+#include <QFinalState>
+#include <QSignalTransition>
 /*
 const QHash<QString,QStringList> ShiftManager::scadaQueriesStrings {
     {"wonderware",{
@@ -35,6 +37,8 @@ const QHash<QString,QStringList> ShiftManager::scadaQueriesStrings {
 int ShiftManager::Shift::count = 2;
 int ShiftManager::Shift::intervalInMinutes = 60;
 
+using SYS::QError;
+
 namespace {
     const QHash<QString,std::function<void(ShiftManager*)> > DocCreatorMap{
         {"html",&ShiftManager::createDocWorker<HTMLShiftWorker>}
@@ -58,16 +62,217 @@ QPair<int,int> timeFromString(QString source) {
 }
 
 ShiftManager::ShiftManager(QObject *parent) : QObject(parent),isPermanent(false),
-    retryConnectDelaySecs(1), printTimeOffset(0),m_dateTimeformat("yyyy-MM-dd hh:mm:ss.zz")
+    retryConnectDelaySecs(1), printTimeOffset(0),m_dateTimeformat("yyyy-MM-dd hh:mm:ss.zz"),
+    m_isCriticalErrorSet(false),m_needRecreateSQLWorker(false),m_isFinishedCycle(false),
+    m_docCreatorCnstrQueriesBits(0x00)
 {
-    //query.prepare(queryPattern);
+    initStateMachine();
 }
 
-void ShiftManager::process()
+void ShiftManager::onStartState()
 {
-    connect(&m_everyShiftTimer, SIGNAL(timeout()), this, SLOT(work()));
+    SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("start").toUtf8())
+    //if critical error set before last cycle or app is not permanent
+    if(isCriticalErrorSet() || isFinishedCycle() && isPermanent)
+        emit exit();
+
+    //first or after non critical err
+    if(!isFinishedCycle())
+        emit startStateSuccess();
+    /*
+    connect(&m_everyShiftTimer, SIGNAL(timeout()), this, SLOT(start()));
     connect(this,SIGNAL(exit()),qApp, SLOT(quit()));
-    QTimer::singleShot(0,this,SLOT(work()));
+    QTimer::singleShot(0,this,SLOT(start()));
+            */
+    setIsFinishedCycle(false);
+}
+
+void ShiftManager::onErrorState()
+{
+    SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("error").toUtf8())
+    while(!m_errors.isEmpty()) {
+        QString logmsg("%1:%2");
+        auto err = m_errors.dequeue();
+
+        if(err.level > EventLogScope::warning) {
+            SYS_LOG_WINDOW(err.level, qPrintable(logmsg), &SYS::warning)
+            if(err.level > EventLogScope::error)
+                setIsCriticalErrorSet(true);
+        } else
+            SYS_LOG(EventLogScope::warning, qPrintable(logmsg));
+        /*
+        switch (SYS::toUType(err.type)) {
+        case SYS::QError::Type::ConnectionError:
+            logmsg = logmsg.arg("ConnectionError");
+            //if SQL sender trying to reconnect
+            if(SQLWorker* _sender = qobject_cast<SQLWorker*>(sender())) {
+                createSQLWorker(true);
+
+                //QTimer::singleShot(retryConnectDelaySecs*1000,_sender,SLOT(connect()));
+                //retryConnectDelaySecs <<= 1;
+                //if(retryConnectDelaySecs > 3600)
+                    emit exit();//retryConnectDelaySecs = 1;
+            }
+            break;
+        default:
+            logmsg = logmsg.arg("Unknown type");
+            break;
+        }
+        */
+    }
+    emit errorAccept();
+}
+void ShiftManager::onCreateSqlWorkerState()
+{
+    if(!m_SQLWorkerThr.isNull() && !m_SQLWorkerThr->isFinished()){
+        if(needRecreateSQLWorker()) {
+            SYS_LOG(EventLogScope::notification, "Recreate new SQL worker instance");
+            QMetaObject::invokeMethod(m_SQLWorkerThr.data(), "quit", Qt::QueuedConnection);
+            setNeedRecreateSQLWorker(false);
+
+            QEventLoop loop;
+            QTimer timeouttimer;
+            timeouttimer.setSingleShot(true);
+            connect(m_SQLWorkerThr.data(), SIGNAL( finished()), &loop, SLOT(quit()) );
+            connect(&timeouttimer, SIGNAL(timeout()), &loop, SLOT(quit()));
+            timeouttimer.start(10000);
+            loop.exec();
+
+            //if timer not triggered - good, thread are finished,
+            //else - emit signal and change state to errState
+            if(!timeouttimer.isActive()){
+                //thread is not finished
+                SYS_LOG(EventLogScope::warning,"Timeout while waiting finished thread.")
+                emit createSqlWorkerFailed();
+                return;
+            }
+        } else {
+            //test signal
+            //emit createSqlWorkerFailed();
+            emit createSqlWorkerSuccess();
+            return;
+        }
+    }
+
+    SYS_LOG(EventLogScope::notification, "Create new SQL worker instance");
+
+    SQLWorker* worker = new SQLWorker(configGroups.value("server").toVariantMap());
+    m_SQLWorkerThr.reset(new QThread);
+    connect( m_SQLWorkerThr.data(), SIGNAL( finished() ), worker, SLOT( deleteLater() ) );
+    //connect( m_SQLWorkerThr.data(), &QThread::finished, this, [this](){this->onCreateSqlWorkerState(true);} );
+    //connect( m_SQLWorker.data(), SIGNAL( finished() ), m_SQLWorker.data(), SLOT( deleteLater() ) );
+    //connect( task, SIGNAL( ready( int, int, QImage ) ), SLOT( onPartReady( int, int, QImage ) ) );
+    connect( worker, SIGNAL(connected()), this, SIGNAL( connectSqlWorkerSuccess() ) );
+    connect( m_SQLWorkerThr.data(), SIGNAL( started() ), worker, SLOT( connect() ));
+    connect( worker, SIGNAL( error(SYS::QError) ), this, SLOT( onError(SYS::QError) ));
+    connect( this, SIGNAL( queryExec(SQLWorker::QueryTypes,QString&)), worker, SLOT(exec(QueryTypes,QString&)));
+    connect( worker, SIGNAL( queryResult(SQLWorker::QueryTypes,QSqlQuery)), this , SLOT(onQueryResult(SQLWorker::QueryTypes,QSqlQuery)));
+
+    worker->moveToThread( m_SQLWorkerThr.data() );
+    //m_SQLWorkerThr->start();
+
+    emit createSqlWorkerSuccess();
+    /*
+    m_SQLWorker.reset(new SQLWorker(configGroups.value("server").toVariantMap()));
+    connect(m_SQLWorker.data(),SIGNAL(error(SYS::QError)),
+                       this,SLOT(onError(SYS::QError)));
+    connect(m_SQLWorker.data(),SIGNAL(connected()),
+            this,SLOT(onConnected()));
+            */
+}
+
+void ShiftManager::onConnectSqlWorkerState()
+{
+    SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("connect").toUtf8())
+    if(m_SQLWorkerThr.isNull())
+            onError(SYS::QError(EventLogScope::warning,
+                                QError::Type::InternalError, "Thread must exist in connection state"));
+    m_SQLWorkerThr->start();
+}
+
+void ShiftManager::onWorkSqlWorkerState()
+{
+    SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("swl work").toUtf8())
+    emit queryExec(SQLWorker::QueryTypes::TagDescription, prepareTagDescriptionQuery());
+    emit queryExec(SQLWorker::QueryTypes::TagValues,
+                   prepareMainQuery(specDateTime().isValid() ? specDateTime() : QDateTime::currentDateTime()));
+}
+
+void ShiftManager::onWorkDocWorkerState()
+{
+    if(m_DocWorker.isNull()) {
+        onError(SYS::QError(EventLogScope::warning,
+                            QError::Type::InternalError, "Doc creator must be valid in current state"));
+        return;
+    }
+
+}
+
+void ShiftManager::initStateMachine()
+{
+    //глобальные свойства
+    QState* startState = new QState(&stateMachine);
+    QState* createSqlWorkerState = new QState(&stateMachine);
+    QState* processState = new QState(&stateMachine);
+    QState* errorState = new QState(&stateMachine);
+    QFinalState* finalState = new QFinalState(&stateMachine);
+
+    //подсвойства
+    QState* connectSqlWorkerState = new QState(processState);
+    QState* workSqlWorkerState = new QState(processState);
+    QState* workDocWorkerState = new QState(processState);
+    QFinalState* processFinalState = new QFinalState(processState);
+
+    //transitions
+    startState->addTransition(this, SIGNAL(exit()),finalState);
+    startState->addTransition(this, SIGNAL(startStateSuccess()),createSqlWorkerState);
+
+    //process
+    QSignalTransition *finishedCycleTrans =
+            processState->addTransition(processState,SIGNAL(finished()), startState);
+    processState->addTransition(this, SIGNAL(errorChange()),errorState);
+
+    //create SQL Worker state
+    QSignalTransition *errFromSqlCreateStateTrans =
+            createSqlWorkerState->addTransition(this, SIGNAL(createSqlWorkerFailed()), errorState);
+    createSqlWorkerState->addTransition(this,SIGNAL(createSqlWorkerSuccess()), processState);
+    createSqlWorkerState->assignProperty(this,"isCriticalErrorSet",false);
+    //sub proccess
+    connectSqlWorkerState->addTransition(this,SIGNAL(connectSqlWorkerSuccess()),workSqlWorkerState);
+    workSqlWorkerState->addTransition(this,SIGNAL(workSqlWorkerSuccess()),workDocWorkerState);
+    workDocWorkerState->addTransition(this,SIGNAL(workDocWorkerSuccess()),processFinalState);
+
+    errorState->addTransition(this, SIGNAL(errorAccept()),startState);
+    /*
+    stateMachine.addState(startState);
+    stateMachine.addState(createSqlWorkerState);
+    stateMachine.addState(connectSqlWorkerState);
+    stateMachine.addState(workSqlWorkerState);
+    stateMachine.addState(workDocWorkerState);
+    stateMachine.addState(errorState);
+    stateMachine.addState(finalState);
+    */
+    processState->setInitialState(connectSqlWorkerState);
+    stateMachine.setInitialState(startState);
+    stateMachine.setGlobalRestorePolicy(QStateMachine::DontRestoreProperties);
+
+    connect(&stateMachine, SIGNAL(finished()), qApp,  SLOT(quit()));
+    connect(startState, SIGNAL(entered()), this, SLOT(onStartState()));
+    connect(createSqlWorkerState, SIGNAL(entered()), this, SLOT(onCreateSqlWorkerState()));
+    connect(connectSqlWorkerState, SIGNAL(entered()), this, SLOT(onConnectSqlWorkerState()));
+    connect(workSqlWorkerState, SIGNAL(entered()), this, SLOT(onWorkSqlWorkerState()));
+    connect(workDocWorkerState, SIGNAL(entered()), this, SLOT(onWorkDocWorkerState()));
+    connect(errorState, SIGNAL(entered()), this, SLOT(onErrorState()));
+
+    //on transition set need recreate flag
+    connect(errFromSqlCreateStateTrans, &QSignalTransition::triggered,
+            this, [this](){this->setNeedRecreateSQLWorker(true);});
+    //on transition set need set finishcycle property and reset spec datetime property
+    connect(finishedCycleTrans, &QSignalTransition::triggered,
+            this, [this](){this->setIsFinishedCycle(true);
+                           this->setSpecDateTime(QDateTime());
+                           this->setDocCreatorCnstrQueriesBits(0x00);});
+    //connect(processState, SIGNAL(finished()), this, SLOT(onStartState()));
 }
 
 void ShiftManager::read(const QString &filename)
@@ -164,8 +369,12 @@ void ShiftManager::read(const QJsonObject &&object)
     if(!outputObj.isEmpty()){
         QJsonValue formatVal = outputObj["format"];
         qDebug() << formatVal.toString();
-        if(DocCreatorMap.keys().contains(formatVal.toString()))
+        if(DocCreatorMap.keys().contains(formatVal.toString())){
             DocCreatorMap.value(formatVal.toString())(this);
+            QJsonValue countTagsOnPage = outputObj["countTagsOnPage"];
+            if(!countTagsOnPage.isUndefined())
+                m_DocWorker.data()->setCountTagsOnPage(countTagsOnPage.toInt());
+        }
     }
     //parse "options" group
     QJsonObject optionsObj = configGroups["options"];
@@ -206,29 +415,6 @@ void ShiftManager::read(const QJsonObject &&object)
     SYS_LOG(EventLogScope::notification, "Config file parsed");
 }
 
-void ShiftManager::createSQLWorker()
-{
-    SYS_LOG(EventLogScope::notification, "Create new SQL worker instance");
-
-    SQLWorker* worker = new SQLWorker(configGroups.value("server").toVariantMap());
-    QThread* thread = new QThread;
-    connect( thread, SIGNAL( finished() ), worker, SLOT( deleteLater() ) );
-    connect( thread, SIGNAL( finished() ), thread, SLOT( deleteLater() ) );
-    //connect( task, SIGNAL( ready( int, int, QImage ) ), SLOT( onPartReady( int, int, QImage ) ) );
-    connect( worker, SIGNAL(connected()), thread, SLOT( quit() ) );
-    connect( thread, SIGNAL( started() ), worker, SLOT( connect() ));
-    connect( worker, SIGNAL( error(SYS::QError) ), this, SLOT( onError(SYS::QError) ));
-
-    worker->moveToThread( thread );
-    thread->start();
-    /*
-    m_SQLWorker.reset(new SQLWorker(configGroups.value("server").toVariantMap()));
-    connect(m_SQLWorker.data(),SIGNAL(error(SYS::QError)),
-                       this,SLOT(onError(SYS::QError)));
-    connect(m_SQLWorker.data(),SIGNAL(connected()),
-            this,SLOT(onConnected()));
-            */
-}
 
 QString ShiftManager::prepareMainQuery(QDateTime& requestedDateTime)
 {
@@ -240,11 +426,11 @@ QString ShiftManager::prepareMainQuery(QDateTime& requestedDateTime)
                                                          {"shift",QVariant::fromValue(prevShift)},
                                                          {"datetime",QVariant::fromValue(requestedDateTime)},
                                                          {"datetimeformat",QVariant::fromValue(m_dateTimeformat)}});
+
 }
 
 QString ShiftManager::prepareTagDescriptionQuery()
 {
-    //QString queryString = descrTagQueryStringPattern;
     return m_DBAdapter->prepareQuery(DBAdapter::QueryTypes::TagDescriptionList,
                                             QVariantMap {{"taglist",QVariant::fromValue(m_tagsNamesList)}});
 
@@ -264,59 +450,55 @@ int ShiftManager::getShiftIndexOnReqTime(QTime &reqTime)
     return -1;
 }
 
-SQLWorker* ShiftManager::getSQLWorker()
-{
-    return m_SQLWorker.data();
-}
-
 void ShiftManager::onError(SYS::QError err)
 {
     qDebug() << Q_FUNC_INFO << " Err: " << SYS::toUType(err.type);
-    QString logmsg("%1:%2");
-    //logmsg = logmsg.arg("SQL error: ");
+    m_errors.enqueue(err);
+    emit errorChange();
+}
 
-    switch (SYS::toUType(err.type)) {
-    case SYS::QError::Type::ConnectionError:
-        logmsg = logmsg.arg("ConnectionError");
-        //if SQL sender trying to reconnect
-        if(SQLWorker* _sender = qobject_cast<SQLWorker*>(sender())) {
-            QTimer::singleShot(retryConnectDelaySecs*1000,_sender,SLOT(connect()));
-            retryConnectDelaySecs <<= 1;
-            if(retryConnectDelaySecs > 3600)
-                emit exit();//retryConnectDelaySecs = 1;
-        }
+void ShiftManager::onQueryResult(SQLWorker::QueryTypes id, QSqlQuery query)
+{
+    if(!query.isValid()) {
+        onError(SYS::QError(EventLogScope::warning,
+                            QError::Type::InternalError, "Query must be valid in current state"));
+        return;
+    }
+    if(!m_DocWorker.isNull()) {
+        onError(SYS::QError(EventLogScope::warning,
+                            QError::Type::InternalError, "Doc creator must be valid in current state"));
+        return;
+    }
+    QStringList headerTitles;
+
+    switch (SYS::toUType(id)) {
+    case SQLWorker::QueryTypes::TagDescription:
+        SYS_LOG(EventLogScope::notification,"Tag description query get by Shift Manager")
+        m_DocWorker->setVertHeaderTableTitles(sm_DBAdapter->getTagDescr(std::move(query)));
+        setDocCreatorCnstrQueriesBits(docCreatorCnstrQueriesBits() | 0x01);
+        break;
+    case SQLWorker::QueryTypes::TagValues:
+        SYS_LOG(EventLogScope::notification,"Tag values query get by Shift Manager")
+        m_DocWorker->setValuesMap(m_DBAdapter->getTagValuesMap(std::move(query),headerTitles));
+        m_DocWorker->setHorHeaderTableTitles(headerTitles);
+        setDocCreatorCnstrQueriesBits(docCreatorCnstrQueriesBits() | 0x02);
         break;
     default:
-        logmsg = logmsg.arg("Unknown type");
         break;
     }
-    if(err.level > EventLogScope::warning) {
-        SYS_LOG_WINDOW(err.level, qPrintable(logmsg), &SYS::warning)
-        emit exit();
-    } else
-        SYS_LOG(EventLogScope::warning, qPrintable(logmsg));
+    //0000 0011 - both queries exec
+    if(docCreatorCnstrQueriesBits()==0x03)
+        emit workSqlWorkerSuccess();
 }
 
-void ShiftManager::onConnected() {
-    retryConnectDelaySecs=1;
-    SYS_LOG(EventLogScope::notification, "Connect to db success");
-
-    if(m_tagsNameDescription.isEmpty())
-        ;//m_tagsNameDescription = m_SQLWorker.data()->exec(prepareTagDescriptionQuery());
-    //prepare query
-    //prepareQuery(QDateTime::currentDateTime());
-}
-
-void ShiftManager::work()
+void ShiftManager::onDocResult(QTextDocument &)
 {
-    if(m_tagsNameDescription.isEmpty())
-        ;//m_tagsNameDescription = m_DBAdapter.data()->
-        //        getTagDescr(m_SQLWorker.data()->exec(prepareTagDescriptionQuery()));
-    if(m_SQLWorker.isNull())
-        createSQLWorker();
 
-    if(!isPermanent)
-        ;//emit exit();
+}
+
+void ShiftManager::start()
+{
+    stateMachine.start();
 }
 
 bool ShiftManager::Shift::check(QTime& start,QTime& stop){

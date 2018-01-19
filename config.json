@@ -2,7 +2,7 @@
 	"server": {
         "type" : "MSSQL",
         "driver" : "QODBC",
-        "address" : "192.168.200.42",
+        "address" : "192.168.200.41",
 		"user" : "wwShiftLists",
 		"password" : 1,
 		"db" : "Runtime",
@@ -12,6 +12,7 @@
 	"output": {
 		"format" : "html",
         "device" : "file",
+        "countTagsOnPage" : 20,
 		"path" : ""		
     },
 
