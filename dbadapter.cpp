@@ -13,10 +13,11 @@ const QHash<DBAdapter::QueryTypes,QStringList> DBAdapter::keys{
 };
 
 WonderwareDBAdapter::WonderwareDBAdapter():DBAdapter(
-    {{QueryTypes::TagDescriptionList,"SELECT Tag = Tag.TagName, Description = Tag.Description "
-                                             "FROM Runtime.dbo.AnalogTag, Runtime.dbo.Tag "
+    {{QueryTypes::TagDescriptionList,"SELECT Tag = Tag.TagName, Description = Tag.Description, Unit "
+                                             "FROM Runtime.dbo.AnalogTag, Runtime.dbo.Tag, Runtime.dbo.EngineeringUnit "
                                              "WHERE Tag.TagName IN (\'%1\') "
-                                             "AND Tag.TagName = AnalogTag.TagName"},
+                                             "AND Tag.TagName = AnalogTag.TagName "
+                                             "AND AnalogTag.EUKey = EngineeringUnit.EUKey "},
     {QueryTypes::TagValuesList,"SET QUOTED_IDENTIFIER OFF "
                                         "SELECT * FROM OPENQUERY(INSQL, \"SELECT DateTime, %1 FROM WideHistory "
                                         "WHERE wwResolution = %2 " //3600000 - 1 hour interval
@@ -39,8 +40,11 @@ QVector< QPair<QString,QString> > WonderwareDBAdapter::getTagDescr(QSqlQuery &&q
     QVector< QPair<QString,QString> > result;
 
     while(query.next()) {
+        QString descr = query.value(rec.indexOf("Description")).toString();
+        QString unit = query.value(rec.indexOf("Unit")).toString();
+
         result.append(qMakePair(query.value(rec.indexOf("Tag")).toString(),
-                                query.value(rec.indexOf("Description")).toString()));
+                                unit.isEmpty() ? descr : descr.append(QString(" (%1)").arg(unit))));
     }
     return result;
 }
@@ -78,6 +82,7 @@ QString WonderwareDBAdapter::prepareQuery(DBAdapter::QueryTypes type, QVariantMa
         Q_ASSERT(false);
         break;
     }
+    return QString();
 }
 
 //params must contain "start","stop","interval","taglist"
@@ -97,7 +102,7 @@ QString WonderwareDBAdapter::prepareTagValuesQuery(QVariantMap &&params)
 
     QString queryString = queries.value(QueryTypes::TagValuesList);
 
-    queryString = "["+params["taglist"].toStringList().join("],[")+"]";
+    QString tagString("[" + params["taglist"].toStringList().join("],[") + "]");
 
     auto requestedDateTime = params["datetime"].toDateTime();
     auto requestedShift = params["shift"].value<ShiftManager::Shift>();
@@ -110,6 +115,7 @@ QString WonderwareDBAdapter::prepareTagValuesQuery(QVariantMap &&params)
     dateStart.setTime(requestedShift.start);
     dateStop.setTime(requestedShift.stop);
 
+    queryString = queryString.arg(tagString);
     queryString = queryString.arg(QString::number(ShiftManager::Shift::intervalInMinutes*60*1000));
     queryString = queryString.arg(dateStart.toString(params["datetimeformat"].toString()));
     queryString = queryString.arg(dateStop.toString(params["datetimeformat"].toString()));

@@ -4,6 +4,7 @@
 #include "sqlworker.h"
 #include "htmlshiftworker.h"
 #include "dbadapter.h"
+#include "devpolicies.h"
 
 #include <QSqlQuery>
 #include <QVariantMap>
@@ -28,7 +29,8 @@ class ShiftManager : public QObject
     Q_PROPERTY(bool isCriticalErrorSet READ isCriticalErrorSet WRITE setIsCriticalErrorSet)
     Q_PROPERTY(bool isFinishedCycle READ isFinishedCycle WRITE setIsFinishedCycle)
     Q_PROPERTY(QDateTime specDateTime READ specDateTime WRITE setSpecDateTime)
-    Q_PROPERTY(quint8 docCreatorCnstrQueriesBits READ docCreatorCnstrQueriesBits WRITE setDocCreatorCnstrQueriesBits)
+    Q_PROPERTY(quint8 sqlQueriesBits READ sqlQueriesBits WRITE setSqlQueriesBits)
+    Q_PROPERTY(int retryAttemptsInterval READ retryAttemptsInterval WRITE setRetryAttemptsInterval)
 public:
     struct Shift {
         static int count;
@@ -50,19 +52,22 @@ public:
         bool operator ==(const Shift& rhs){
             return start==rhs.start && stop==rhs.stop;}
     };
-
+    enum class QueriesResult {
+        TagDescriptionSuccess = 0x01,
+        TagValuesSuccess = 0x02
+    };
     explicit ShiftManager(QObject *parent = nullptr);
 
-    //
+    //parsing config file methods
     void read(const QString& filename);
     void read(const QJsonObject&& object);
     bool readShiftsInfo(const QJsonObject& obj);
 
     //factory functions
-    //SQLWorker* getSQLWorker();
-
     template <class TWorker>
     void createDocWorker();
+    template <class TWorker>
+    void createDevWorker();
     template <class TAdapter>
     void createDBAdapter();
     //*****************
@@ -78,6 +83,7 @@ public:
     int printTimeOffset;
     QString m_dateTimeformat;
     QHash< QString, QJsonObject > configGroups;
+
     bool needRecreateSQLWorker() const    {
         return m_needRecreateSQLWorker;
     }
@@ -95,9 +101,14 @@ public:
         return m_specDateTime;
     }
 
-    quint8 docCreatorCnstrQueriesBits() const
+    quint8 sqlQueriesBits() const
     {
-        return m_docCreatorCnstrQueriesBits;
+        return m_sqlQueriesBits;
+    }
+
+    int retryAttemptsInterval() const
+    {
+        return m_retryAttemptsInterval;
     }
 
 signals:
@@ -109,8 +120,11 @@ signals:
     void connectSqlWorkerSuccess();
     void workSqlWorkerSuccess();
     void workDocWorkerSuccess();
+    void workDevWorkerSuccess();
+
     void startStateSuccess();
-    void queryExec(SQLWorker::QueryTypes, QString&);
+    void queryExec(SQLWorker::QueryTypes, QString );
+    void connectToDB();
 public slots:
     //main state - initialize work timer
     void onStartState();
@@ -119,10 +133,11 @@ public slots:
     void onConnectSqlWorkerState();
     void onWorkSqlWorkerState();
     void onWorkDocWorkerState();
+    void onWorkDevWorkerState();
 
     void onError(SYS::QError);
     void onQueryResult(SQLWorker::QueryTypes,QSqlQuery);
-    void onDocResult(QTextDocument&);
+    void onDocResult(QTextDocument*);
     void start();
 
     //properties
@@ -131,12 +146,12 @@ public slots:
     }
 
     void setIsCriticalErrorSet(bool isCriticalErrorSet)  {
-        qDebug() << Q_FUNC_INFO << " val:" << isCriticalErrorSet;
+        //qDebug() << Q_FUNC_INFO << " val:" << isCriticalErrorSet;
         m_isCriticalErrorSet = isCriticalErrorSet;
     }
 
     void setIsFinishedCycle(bool isFinishedCycle)   {
-        qDebug() << Q_FUNC_INFO << " val:" << isFinishedCycle;
+        //qDebug() << Q_FUNC_INFO << " val:" << isFinishedCycle;
         m_isFinishedCycle = isFinishedCycle;
     }
 
@@ -145,9 +160,14 @@ public slots:
         m_specDateTime = specDateTime;
     }
 
-    void setDocCreatorCnstrQueriesBits(quint8 docCreatorCnstrQueriesBits)
+    void setSqlQueriesBits(quint8 sqlQueriesBits)
     {
-        m_docCreatorCnstrQueriesBits = docCreatorCnstrQueriesBits;
+        m_sqlQueriesBits = sqlQueriesBits;
+    }
+
+    void setRetryAttemptsInterval(int retryAttemptsInterval)
+    {
+        m_retryAttemptsInterval = retryAttemptsInterval;
     }
 
 private:
@@ -161,15 +181,17 @@ private:
     //strategies
     QScopedPointer<QThread, QScopedPointerDeleteLater > m_SQLWorkerThr;
     QScopedPointer<HTMLShiftWorker> m_DocWorker;
+    QScopedPointer<DevPolicy> m_DevWorker;
     QScopedPointer<DBAdapter> m_DBAdapter;
     //**********
     QTimer m_everyShiftTimer;
-    int retryConnectDelaySecs;
     bool m_needRecreateSQLWorker;
     bool m_isCriticalErrorSet;
     bool m_isFinishedCycle;
     QDateTime m_specDateTime;
-    quint8 m_docCreatorCnstrQueriesBits;
+    QTextDocument* m_lastDoc;
+    quint8 m_sqlQueriesBits;
+    int m_retryAttemptsInterval;
 };
 
 template <class TWorker>
@@ -177,8 +199,16 @@ void ShiftManager::createDocWorker()
 {
     m_DocWorker.reset(new TWorker);
     connect( m_DocWorker.data(), SIGNAL( error(SYS::QError) ), this, SLOT( onError(SYS::QError) ));
-    connect( m_DocWorker.data(), SIGNAL( docResult(QTextDocument&)), this, SLOT( onDocResult(QTextDocument&)));
+    connect( m_DocWorker.data(), SIGNAL( docResult(QTextDocument*)), this, SLOT( onDocResult(QTextDocument*)));
 }
+template <class TWorker>
+void ShiftManager::createDevWorker()
+{
+    m_DevWorker.reset(new TWorker);
+    //connect( m_DocWorker.data(), SIGNAL( error(SYS::QError) ), this, SLOT( onError(SYS::QError) ));
+    //connect( m_DocWorker.data(), SIGNAL( docResult(QTextDocument&)), this, SLOT( onDocResult(QTextDocument&)));
+}
+
 template <class TAdapter>
 void ShiftManager::createDBAdapter()
 {

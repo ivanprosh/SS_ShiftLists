@@ -3,6 +3,7 @@
 
 #include <QVariantMap>
 #include <QSqlDatabase>
+#include <QSqlQuery>
 #include "sys_error.h"
 
 class SQLWorker : public QObject
@@ -23,11 +24,11 @@ public:
 
 public slots:
     void connect();
-    bool exec(QueryTypes,QString& query);
+    bool exec(SQLWorker::QueryTypes,QString);
     //void onPrepareQuery(const QString& queryPattern);
 signals:
     void error(SYS::QError);
-    void queryResult(QueryTypes,QSqlQuery);
+    void queryResult(SQLWorker::QueryTypes,QSqlQuery);
     void connected();
 
 private:
@@ -38,5 +39,6 @@ private:
 };
 
 Q_DECLARE_METATYPE(SQLWorker::QueryTypes)
+Q_DECLARE_METATYPE(QSqlQuery)
 
 #endif // SQLWORKER_H

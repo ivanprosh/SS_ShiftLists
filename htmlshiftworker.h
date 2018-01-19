@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QTextDocument>
+#include <QVector>
 #include "sys_error.h"
 
 struct HTMLOnePage
@@ -17,16 +18,16 @@ class HTMLShiftWorker : public QObject
 
 public:
     explicit HTMLShiftWorker(QObject *parent = nullptr);
-    template<class T&&>
+    template<class T>
     void setValuesMap(T&& map){
         m_valuesMap = map;
     }
-    template<class T&&>
+    template<class T>
     void setVertHeaderTableTitles(T&& vt){
         m_vertheaderTableTitles = vt;
     }
 signals:
-    void docResult(QTextDocument&);
+    void docResult(QTextDocument*);
     void error(SYS::QError);
 public slots:
     void setHorHeaderTableTitles(const QStringList& ht){ m_horheaderTableTitles = ht; }
@@ -35,6 +36,8 @@ public slots:
 private:
     void populateDocument(QTextDocument&);
     QString getHtmlFromFile(const QString& filename);
+    QString pageAsHtml(int page);
+    QString itemsAsHtmlTable(int page);
 
     QTextDocument m_doc;
     QStringList m_horheaderTableTitles;

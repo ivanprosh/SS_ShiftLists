@@ -28,7 +28,15 @@ private:
 class QError
 {
 public:
-    enum class Type {ConnectionError,ConfigurationError,InternalError,ExchangeError,DataSourceError};
+    enum class Type {
+        ConnectionError,
+        ConfigurationError,
+        InternalError,
+        ExternalError,
+        ExchangeError,
+        DataSourceError
+    };
+
     EventLogScope::severity_level level;
     Type type;
 
@@ -41,6 +49,21 @@ public:
     const char *what() const noexcept {
         return charArray.data();
     }
+    void clear() {
+        charArray.clear();
+    }
+    /*
+    QError& operator=(const QError& right) {
+        //проверка на самоприсваивание
+        if (this == &right) {
+            return *this;
+        }
+        type = right.type;
+        level = right.level;
+        charArray = right.charArray;
+        return *this;
+    }
+    */
 private:
     QByteArray charArray;
 };

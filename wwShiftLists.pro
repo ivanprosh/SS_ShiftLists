@@ -2,7 +2,7 @@
 include(boost.pri)
 
 QT += gui
-QT += core sql widgets
+QT += core sql widgets printsupport
 
 CONFIG += c++11 console
 CONFIG -= app_bundle
@@ -45,10 +45,10 @@ HEADERS += \
     logger.h \
     singleton.h \
     sys_error.h \
-    #docpolicies.h \
     htmlshiftworker.h \
     dbadapter.h \
-    typemsg.h
+    typemsg.h \
+    devpolicies.h
 
 #message($$DEFINES)
 

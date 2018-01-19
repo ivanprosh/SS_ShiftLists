@@ -1,9 +1,8 @@
 #include "sqlworker.h"
 #include "logger.h"
-#include "docpolicies.h"
+#include "devpolicies.h"
 
 #include <QDebug>
-#include <QSqlQuery>
 #include <QSqlError>
 #include <QSqlRecord>
 #include <QHash>
@@ -58,8 +57,13 @@ SQLWorker::~SQLWorker()
 
 void SQLWorker::connect()
 {
-    if(m_connString.isEmpty() || m_database.isOpen())
+    if(m_connString.isEmpty())
         return;
+
+    if(m_database.isOpen()){
+        emit connected();
+        return;
+    }
 
     SYS_LOG(EventLogScope::notification,
             QString("Atempt to connect to SQL Server, connection string: %1").arg(m_connString).toUtf8());
@@ -75,7 +79,7 @@ void SQLWorker::connect()
     emit connected();
 }
 
-bool SQLWorker::exec(QueryTypes id,QString &queryString)
+bool SQLWorker::exec(QueryTypes id, QString queryString)
 {
     QSqlQuery query;
 

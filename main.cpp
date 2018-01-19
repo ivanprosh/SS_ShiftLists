@@ -125,6 +125,8 @@ int main(int argc, char *argv[])
 
     //register type for use in slot-signal model
     qRegisterMetaType<QError>();
+    qRegisterMetaType<SQLWorker::QueryTypes>();
+    qRegisterMetaType<QSqlQuery>();
 
     QCommandLineParser parser;
     ShiftManager shiftManager;
