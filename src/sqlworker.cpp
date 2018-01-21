@@ -72,7 +72,7 @@ void SQLWorker::connect()
     if(!m_database.open()){
         emit error(SYS::QError(EventLogScope::error,
                                SYS::QError::Type::ConnectionError,
-                               QString("SQL error: %1").arg(m_database.lastError().text())));
+                               QString("SQL error string: %1").arg(m_database.lastError().text())));
         return;
     }
 

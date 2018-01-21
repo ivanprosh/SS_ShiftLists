@@ -71,7 +71,7 @@ EventLog::EventLog()
      // Create the log file name in the form ./logs/Event_date_time_counter.log
     std::string filename = "Event";
     fs::path logPath = fs::absolute(targetFolder + "/");
-    logPath = fs::absolute(logPath.string() + filename +  "_%Y%m%d_%H%M%S_%5N.log");
+    logPath = fs::absolute(logPath.string() + filename +  "_%Y%m%d_%H%M%S_%1N.log");
 
      // force file rotation after file reches 1 mb.
     boost::shared_ptr<file_sink> sink(new file_sink(

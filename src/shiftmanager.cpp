@@ -68,8 +68,8 @@ QPair<int,int> timeFromString(QString source) {
 
 ShiftManager::ShiftManager(QObject *parent) : QObject(parent),isPermanent(false),
     printTimeOffset(0),m_dateTimeformat("yyyy-MM-dd hh:mm:ss.zz"),
-    m_isCriticalErrorSet(false),m_needRecreateSQLWorker(false),m_isFinishedCycle(false),
-    m_sqlQueriesBits(0x00),m_retryAttemptsInterval(1),m_DocWorker(new HTMLShiftWorker)
+    m_needRecreateSQLWorker(false),m_isCriticalErrorSet(false),m_isFinishedCycle(false),
+    m_DocWorker(new HTMLShiftWorker),m_sqlQueriesBits(0x00),m_retryAttemptsInterval(1)
 {
     initStateMachine();
 }
@@ -78,7 +78,7 @@ void ShiftManager::onStartState()
 {
     SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("start").toUtf8())
     //if critical error set before last cycle or app is not permanent
-    if(isCriticalErrorSet() || isFinishedCycle() && isPermanent)
+    if(isCriticalErrorSet() || (isFinishedCycle() && isPermanent))
         emit exit();
 
     //first or after non critical err
@@ -96,8 +96,10 @@ void ShiftManager::onErrorState()
 {
     SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("error").toUtf8())
     while(!m_errors.isEmpty()) {
-        QString logmsg("%1:%2");
+        QString logmsg("%1-%2");
         auto err = m_errors.dequeue();
+        logmsg = logmsg.arg(SYS::QEnumToString(err.type));
+        logmsg = logmsg.arg(err.what());
 
         if(err.level > EventLogScope::warning) {
             SYS_LOG_WINDOW(err.level, qPrintable(logmsg), &SYS::warning)
@@ -202,9 +204,9 @@ void ShiftManager::onConnectSqlWorkerState()
 void ShiftManager::onWorkSqlWorkerState()
 {
     SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("sql work").toUtf8())
-    if(!(sqlQueriesBits() && SYS::toUType(QueriesResult::TagDescriptionSuccess)))
+    if(!(sqlQueriesBits() & SYS::toUType(QueriesResult::TagDescriptionSuccess)))
         emit queryExec(SQLWorker::QueryTypes::TagDescription, prepareTagDescriptionQuery());
-    else if(!(sqlQueriesBits() && SYS::toUType(QueriesResult::TagValuesSuccess)))
+    else if(!(sqlQueriesBits() & SYS::toUType(QueriesResult::TagValuesSuccess)))
         emit queryExec(SQLWorker::QueryTypes::TagValues,
                    prepareMainQuery(specDateTime().isValid() ? specDateTime() : QDateTime::currentDateTime()));
 }
@@ -362,7 +364,7 @@ bool ShiftManager::readShiftsInfo(const QJsonObject &obj)
         Shift::count = countShifts;
 
         //sort in ascending order
-        qSort(m_shifts.begin(),m_shifts.end(),[&](const Shift& first,const Shift& second)
+        std::sort(m_shifts.begin(),m_shifts.end(),[&](const Shift& first,const Shift& second)
             {return first.start.msecsSinceStartOfDay() < second.start.msecsSinceStartOfDay();}
         );
         qDebug() << Q_FUNC_INFO << ", first shift time after qsort:" << m_shifts.first().start.hour();
@@ -434,7 +436,7 @@ void ShiftManager::read(const QJsonObject &&object)
     SYS_LOG(EventLogScope::notification, "Config file parsed");
 }
 
-QString ShiftManager::prepareMainQuery(QDateTime& requestedDateTime)
+QString ShiftManager::prepareMainQuery(QDateTime requestedDateTime)
 {
     int CurshiftIndex = getShiftIndexOnReqTime(requestedDateTime.time());
     auto& prevShift = (CurshiftIndex==0) ? m_shifts.last() : m_shifts.at(CurshiftIndex-1);
@@ -459,15 +461,6 @@ QList<QString> ShiftManager::supportedOutputFormats()
     return DevCreatorMap.keys();
 }
 
-int ShiftManager::getShiftIndexOnReqTime(QTime &reqTime)
-{
-    auto it = std::find_if(m_shifts.begin(),m_shifts.end(),
-                 [&](const Shift& sh){return sh.isMyTime(reqTime);});
-    if(it != m_shifts.end())
-        return m_shifts.indexOf(*it);
-    return -1;
-}
-
 void ShiftManager::onError(SYS::QError err)
 {
     qDebug() << Q_FUNC_INFO << " Err: " << SYS::toUType(err.type);
@@ -490,13 +483,13 @@ void ShiftManager::onQueryResult(SQLWorker::QueryTypes id, QSqlQuery query)
     QStringList headerTitles;
 
     switch (SYS::toUType(id)) {
-    case SQLWorker::QueryTypes::TagDescription:
+    case SYS::toUType(SQLWorker::QueryTypes::TagDescription):
         SYS_LOG(EventLogScope::notification,"Tag description query get by Shift Manager")
         m_DocWorker->setVertHeaderTableTitles(m_DBAdapter->getTagDescr(std::move(query)));
         setSqlQueriesBits(sqlQueriesBits() | SYS::toUType(QueriesResult::TagDescriptionSuccess));
         break;
 
-    case SQLWorker::QueryTypes::TagValues:
+    case SYS::toUType(SQLWorker::QueryTypes::TagValues):
         SYS_LOG(EventLogScope::notification,"Tag values query get by Shift Manager")
         m_DocWorker->setValuesMap(m_DBAdapter->getTagValuesMap(std::move(query),headerTitles));
         m_DocWorker->setHorHeaderTableTitles(headerTitles);
@@ -507,7 +500,7 @@ void ShiftManager::onQueryResult(SQLWorker::QueryTypes id, QSqlQuery query)
     }
 
     //0000 0011 - both queries exec
-    if(sqlQueriesBits() && (SYS::toUType(QueriesResult::TagDescriptionSuccess) | SYS::toUType(QueriesResult::TagValuesSuccess)))
+    if(sqlQueriesBits() & (SYS::toUType(QueriesResult::TagDescriptionSuccess) | SYS::toUType(QueriesResult::TagValuesSuccess)))
         emit workSqlWorkerSuccess();
     else
         onWorkSqlWorkerState();

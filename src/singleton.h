@@ -410,7 +410,7 @@ namespace Loki
     struct NoDestroy
     {
         static void ScheduleDestruction(T*, atexit_pfn_t pFun)
-        {}
+        { Q_UNUSED(pFun)}
 
         static void OnDeadReference()
         {}

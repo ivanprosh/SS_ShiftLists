@@ -12,6 +12,7 @@
 #include <QScopedPointer>
 #include <QString>
 #include <QVector>
+#include <QMetaEnum>
 
 #ifdef Q_CC_MSVC
 #include <math.h>
@@ -33,6 +34,12 @@ template<typename E>
 constexpr typename std::underlying_type<E>::type
 toUType(E enumerator) noexcept{
     return static_cast<typename std::underlying_type<E>::type>(enumerator);
+}
+/* возвращает строковое значение элемента класса enum'a */
+template<typename QEnum>
+QString QEnumToString (const QEnum value)
+{
+  return QString(QMetaEnum::fromType<QEnum>().valueToKey(SYS::toUType(value)));
 }
 
 void information(QWidget *parent, const QString &title,

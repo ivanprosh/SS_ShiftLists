@@ -72,12 +72,13 @@ public:
     void createDBAdapter();
     //*****************
     //SQL func
-    QString prepareMainQuery(QDateTime &stop);
+    QString prepareMainQuery(QDateTime stop);
     QString prepareTagDescriptionQuery();
 
     QList<QString> supportedOutputFormats();
     //Shift handl
-    int getShiftIndexOnReqTime(QTime &reqTime);
+    template<class TTime>
+    int getShiftIndexOnReqTime(TTime &&reqTime);
 
     bool isPermanent;
     int printTimeOffset;
@@ -208,11 +209,19 @@ void ShiftManager::createDevWorker()
     //connect( m_DocWorker.data(), SIGNAL( error(SYS::QError) ), this, SLOT( onError(SYS::QError) ));
     //connect( m_DocWorker.data(), SIGNAL( docResult(QTextDocument&)), this, SLOT( onDocResult(QTextDocument&)));
 }
-
 template <class TAdapter>
 void ShiftManager::createDBAdapter()
 {
     m_DBAdapter.reset(new TAdapter);
+}
+//universal reference approach
+template<class TTime>
+int ShiftManager::getShiftIndexOnReqTime(TTime &&reqTime){
+    auto it = std::find_if(m_shifts.begin(),m_shifts.end(),
+                 [&](const Shift& sh){return sh.isMyTime(reqTime);});
+    if(it != m_shifts.end())
+        return m_shifts.indexOf(*it);
+    return -1;
 }
 
 Q_DECLARE_METATYPE(ShiftManager::Shift)

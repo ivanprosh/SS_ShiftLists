@@ -27,6 +27,8 @@ private:
 //using for signal-slot system
 class QError
 {
+    Q_GADGET
+
 public:
     enum class Type {
         ConnectionError,
@@ -36,6 +38,7 @@ public:
         ExchangeError,
         DataSourceError
     };
+    Q_ENUM(Type)
 
     EventLogScope::severity_level level;
     Type type;

@@ -63,8 +63,8 @@ private:
 
 typedef Loki::SingletonHolder<EventLogScope::EventLog> _logger;
 
-#define SYS_LOG(S,MSG) _logger::Instance().LogEvent(##S,##MSG);
-#define SYS_LOG_WINDOW(S,MSG,WND_TYPE) _logger::Instance().LogEvent(##S,##MSG,##WND_TYPE);
+#define SYS_LOG(S,MSG) _logger::Instance().LogEvent(S,MSG);
+#define SYS_LOG_WINDOW(S,MSG,WND_TYPE) _logger::Instance().LogEvent(S,MSG,WND_TYPE);
 
 /*
 #include "singleton.h"

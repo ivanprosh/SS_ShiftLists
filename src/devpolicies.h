@@ -7,10 +7,11 @@
 #include <QPrinterInfo>
 
 #include "sys_error.h"
-#include "logger.h"
+//#include "logger.h"
 
 class DevPolicy {
 public:
+    virtual ~DevPolicy(){}
     virtual bool operator()(QString filename,
                             QTextDocument* doc) = 0;
     SYS::QError lastError;
@@ -56,6 +57,7 @@ class PrinterDevPolicy : public DevPolicy {
 public:
     virtual bool operator()(QString filename,
                             QTextDocument* doc) override{
+        Q_UNUSED(filename)
         QPrinter printer(QPrinterInfo::defaultPrinter(),
                          QPrinter::HighResolution);
         if(!printer.isValid()){

@@ -71,13 +71,11 @@ QVector<QVector<float> > WonderwareDBAdapter::getTagValuesMap(QSqlQuery &&query,
 
 QString WonderwareDBAdapter::prepareQuery(DBAdapter::QueryTypes type, QVariantMap&& params)
 {
-    switch (type) {
+    switch (SYS::toUType(type)) {
     case SYS::toUType(QueryTypes::TagDescriptionList):
         return prepareTagDescrQuery(std::forward<QVariantMap>(params));
-        break;
     case SYS::toUType(QueryTypes::TagValuesList):
         return prepareTagValuesQuery(std::forward<QVariantMap>(params));
-        break;
     default:
         Q_ASSERT(false);
         break;
@@ -165,7 +163,7 @@ QString WonderwareDBAdapter::prepareTagDescrQuery(QVariantMap &&params)
     }
     QString queryString = queries.value(QueryTypes::TagDescriptionList);
 
-    queryString.arg(params["taglist"].toStringList().join("','"));
+    queryString = queryString.arg(params["taglist"].toStringList().join("','"));
 
     return queryString;
 }
