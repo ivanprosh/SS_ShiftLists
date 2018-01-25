@@ -6,37 +6,13 @@
 #include <QJsonObject>
 #include <QJsonDocument>
 #include <QJsonArray>
-#include <QDebug>
-#include <QTimer>
-#include <QStringList>
 #include <QDate>
-#include <QThread>
 #include <QFinalState>
 #include <QSignalTransition>
 #include <QTextDocument>
 #include <QSqlQuery>
-/*
-const QHash<QString,QStringList> ShiftManager::scadaQueriesStrings {
-    {"wonderware",{
-                  //first query - main query
-                  "SET QUOTED_IDENTIFIER OFF "
-                  "SELECT * FROM OPENQUERY(INSQL, \"SELECT DateTime, %1 FROM WideHistory "
-                  "WHERE wwResolution = %2 " //3600000 - 1 hour interval
-                  "AND wwQualityRule = \'Extended\' "
-                  "AND wwVersion = \'Latest\' "
-                  "AND DateTime >= \'%3\' "
-                  "AND DateTime <= \'%4\'\")",
 
-                  //second query - description tag query
-                  "SELECT Tag.TagName, Tag.Description "
-                  "FROM Runtime.dbo.AnalogTag, Runtime.dbo.Tag "
-                  "WHERE Tag.TagName IN (\'Reactor_001.ReactLevel\') "
-                  "AND Tag.TagName = AnalogTag.TagName"
-                  }
-    }
-};
-*/
-int ShiftManager::Shift::count = 2;
+int ShiftManager::Shift::count = 0;
 int ShiftManager::Shift::intervalInMinutes = 60;
 
 using SYS::QError;
@@ -44,13 +20,13 @@ using SYS::QError;
 namespace {
     const QHash<QString,std::function<void(ShiftManager*)> > DevCreatorMap{
         {"html",&ShiftManager::createDevWorker<HtmlDevPolicy>},
-        {"pdf",&ShiftManager::createDevWorker<PdfDevPolicy>},
+        //{"pdf",&ShiftManager::createDevWorker<PdfDevPolicy>},
         {"printer",&ShiftManager::createDevWorker<PrinterDevPolicy>}
     };
     const QHash<QString,std::function<void(ShiftManager*)> > DBAdaptersCreatorMap{
         {"wonderware",&ShiftManager::createDBAdapter<WonderwareDBAdapter>}
     };
-    //QStringList availDevices {"file","printer"};
+    const int optimalColumnCount = 12;
 }
 
 QPair<int,int> timeFromString(QString source) {
@@ -61,7 +37,7 @@ QPair<int,int> timeFromString(QString source) {
     if(pos>-1){
         result.first = rx.cap(1).toInt();
         result.second = rx.cap(2).toInt();
-        qDebug() << Q_FUNC_INFO << " h:" << result.first << " m:" << result.second;
+        //qDebug() << Q_FUNC_INFO << " h:" << result.first << " m:" << result.second;
     }
     return result;
 }
@@ -69,26 +45,47 @@ QPair<int,int> timeFromString(QString source) {
 ShiftManager::ShiftManager(QObject *parent) : QObject(parent),isPermanent(false),
     printTimeOffset(0),m_dateTimeformat("yyyy-MM-dd hh:mm:ss.zz"),
     m_needRecreateSQLWorker(false),m_isCriticalErrorSet(false),m_isFinishedCycle(false),
-    m_DocWorker(new HTMLShiftWorker),m_sqlQueriesBits(0x00),m_retryAttemptsInterval(1)
+    m_sqlQueriesBits(0x00),m_retryAttemptsInterval(1),m_curShiftIndex(0),m_prevShiftIndex(0),
+    m_outputPath(QApplication::applicationDirPath())
 {
+    /*
+    connect(&page, &QWebEnginePage::loadFinished,
+                   this,
+                   [this](bool ok){this->page.printToPdf([=](const QByteArray& data){qDebug() << "data: " << data.isEmpty();}); qDebug() << "Print pdf: " << ok;} );
+    */
+    createDocWorker<HTMLShiftWorker>();
+
     initStateMachine();
+}
+
+ShiftManager::~ShiftManager()
+{
+    if(!m_SQLWorkerThr.isNull()){
+        m_SQLWorkerThr.data()->quit();
+        m_SQLWorkerThr.data()->wait();
+    }
 }
 
 void ShiftManager::onStartState()
 {
     SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("start").toUtf8())
+
     //if critical error set before last cycle or app is not permanent
-    if(isCriticalErrorSet() || (isFinishedCycle() && isPermanent))
+    if(isCriticalErrorSet() || (isFinishedCycle() && !isPermanent)){
         emit exit();
+        m_everyShiftTimer.stop();
+    }
 
     //first or after non critical err
     if(!isFinishedCycle())
         QTimer::singleShot(m_retryAttemptsInterval,this,[this]{this->startStateSuccess();});
-    /*
-    connect(&m_everyShiftTimer, SIGNAL(timeout()), this, SLOT(start()));
-    connect(this,SIGNAL(exit()),qApp, SLOT(quit()));
-    QTimer::singleShot(0,this,SLOT(start()));
-            */
+
+    //timeout of update timer was detected
+    if(needUpdate()){
+        emit startStateSuccess();
+        setNeedUpdate(false);
+    }
+
     setIsFinishedCycle(false);
 }
 
@@ -102,11 +99,11 @@ void ShiftManager::onErrorState()
         logmsg = logmsg.arg(err.what());
 
         if(err.level > EventLogScope::warning) {
-            SYS_LOG_WINDOW(err.level, qPrintable(logmsg), &SYS::warning)
-            if(err.level > EventLogScope::error)
+            SYS_LOG_WINDOW(err.level, logmsg.toUtf8(), &SYS::warning)
+            if(err.level >= EventLogScope::error)
                 setIsCriticalErrorSet(true);
         } else
-            SYS_LOG(EventLogScope::warning, qPrintable(logmsg));
+            SYS_LOG(EventLogScope::warning, logmsg.toUtf8());
 
         m_retryAttemptsInterval <<= 1;
         /*
@@ -162,23 +159,28 @@ void ShiftManager::onCreateSqlWorkerState()
             return;
         }
     }
-
     SYS_LOG(EventLogScope::notification, "Create new SQL worker instance");
 
+    m_SQLWorkerThr.reset(new SqlThread(configGroups.value("server").toVariantMap()));
+
+    connect( m_SQLWorkerThr.data(), SIGNAL(connected()), this, SIGNAL( connectSqlWorkerSuccess() ), Qt::QueuedConnection );
+    connect( m_SQLWorkerThr.data(), SIGNAL( error(SYS::QError) ), this, SLOT( onError(SYS::QError) ));
+    connect( this, &ShiftManager::queryExec, m_SQLWorkerThr.data(), &SqlThread::queryExec);
+    connect( m_SQLWorkerThr.data(), &SqlThread::queryResult, this, &ShiftManager::onQueryResult);
+    /*
     SQLWorker* worker = new SQLWorker(configGroups.value("server").toVariantMap());
     m_SQLWorkerThr.reset(new QThread);
+    worker->moveToThread( m_SQLWorkerThr.data() );
     connect( m_SQLWorkerThr.data(), SIGNAL( finished() ), worker, SLOT( deleteLater() ) );
-    //connect( m_SQLWorkerThr.data(), &QThread::finished, this, [this](){this->onCreateSqlWorkerState(true);} );
+    //connect( this, SIGNAL( workSqlWorkerSuccess()), m_SQLWorkerThr.data(), SLOT( quit() ) );
     //connect( m_SQLWorker.data(), SIGNAL( finished() ), m_SQLWorker.data(), SLOT( deleteLater() ) );
-    connect( worker, SIGNAL(connected()), this, SIGNAL( connectSqlWorkerSuccess() ) );
+    connect( worker, SIGNAL(connected()), this, SIGNAL( connectSqlWorkerSuccess() ), Qt::QueuedConnection );
     connect( this, &ShiftManager::connectToDB, worker, &SQLWorker::connect );
     //connect( m_SQLWorkerThr.data(), SIGNAL( started() ), worker, SLOT( connect() ));
     connect( worker, SIGNAL( error(SYS::QError) ), this, SLOT( onError(SYS::QError) ));
     connect( this, &ShiftManager::queryExec, worker, &SQLWorker::exec);
     connect( worker, &SQLWorker::queryResult, this, &ShiftManager::onQueryResult);
-
-    worker->moveToThread( m_SQLWorkerThr.data() );
-    //m_SQLWorkerThr->start();
+    */
 
     emit createSqlWorkerSuccess();
     /*
@@ -188,17 +190,20 @@ void ShiftManager::onCreateSqlWorkerState()
     connect(m_SQLWorker.data(),SIGNAL(connected()),
             this,SLOT(onConnected()));
             */
+
 }
 
 void ShiftManager::onConnectSqlWorkerState()
-{
+{   
     SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("connect").toUtf8())
     if(m_SQLWorkerThr.isNull())
             onError(SYS::QError(EventLogScope::warning,
                                 QError::Type::InternalError, "Thread must exist in connection state"));
     if(!m_SQLWorkerThr->isRunning())
         m_SQLWorkerThr->start();
-    emit connectToDB();
+    QMetaObject::invokeMethod(m_SQLWorkerThr.data(), "connectToDb", Qt::QueuedConnection);
+    //emit connectToDB();
+
 }
 
 void ShiftManager::onWorkSqlWorkerState()
@@ -209,29 +214,44 @@ void ShiftManager::onWorkSqlWorkerState()
     else if(!(sqlQueriesBits() & SYS::toUType(QueriesResult::TagValuesSuccess)))
         emit queryExec(SQLWorker::QueryTypes::TagValues,
                    prepareMainQuery(specDateTime().isValid() ? specDateTime() : QDateTime::currentDateTime()));
+    //page.setHtml("<html><body><h2 align='center'>Сменная ведомость</h2><body/></html>");
 }
 
 void ShiftManager::onWorkDocWorkerState()
 {
+    SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("create doc").toUtf8())
     if(m_DocWorker.isNull()) {
-        onError(SYS::QError(EventLogScope::warning,
+        onError(SYS::QError(EventLogScope::error,
                             QError::Type::InternalError, "Doc creator must be valid in current state"));
         return;
     }
-    m_DocWorker->process();
+
+    m_DocWorker->setShiftIndex(m_prevShiftIndex);
+    m_DocWorker->process(m_lastDoc);
 }
 
 void ShiftManager::onWorkDevWorkerState()
 {
+    SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("save/print doc").toUtf8())
     if(m_DevWorker.isNull()){
         onError(SYS::QError(EventLogScope::warning,
                             QError::Type::InternalError, "Device creator must be valid in current state"));
         return;
     }
-    if((*m_DevWorker)(QString("%1/testResultFile").arg(QApplication::applicationDirPath()),m_lastDoc))
-        emit workDevWorkerSuccess();
-    else
-        onError(m_DevWorker->lastError);
+    auto dateTime = specDateTime().isValid() ? specDateTime() : QDateTime::currentDateTime();
+    if(m_shifts.value(m_prevShiftIndex).isNightCross ||
+            m_shifts.value(m_prevShiftIndex).start.msecsTo(dateTime.time()) < 0)
+         dateTime = dateTime.addDays(-1);
+
+    m_DevWorker->process(QString("%1/%2_SL_%3_%4_%5").arg(m_outputPath)
+                         .arg(m_Node)
+                         .arg(dateTime.date().toString("yyyy-MM-dd"))
+                         .arg(QString(m_DocWorker->horHeaderTableTitles().first()).remove(":"))
+                         .arg(QString(m_DocWorker->horHeaderTableTitles().last()).remove(":")),
+                        m_lastDoc);
+
+
+    //emit workDevWorkerSuccess();
 }
 
 void ShiftManager::initStateMachine()
@@ -321,7 +341,7 @@ bool ShiftManager::readShiftsInfo(const QJsonObject &obj)
 {
     auto startFirstShiftTime = timeFromString(obj["start"].toString());
     auto stopFirstShiftTime = timeFromString(obj["stop"].toString());
-    auto countShifts = obj["count"].toInt();
+    //auto countShifts = obj["count"].toInt();
     auto intervalShiftsSnapshot = obj["interval"].toInt();
 
     QTime startT(startFirstShiftTime.first,startFirstShiftTime.second);
@@ -330,10 +350,13 @@ bool ShiftManager::readShiftsInfo(const QJsonObject &obj)
     m_shifts.clear();
 
     if(startT.isValid() && stopT.isValid()
-            && (countShifts>0) && (countShifts<10)
+            //&& (countShifts>0) && (countShifts<10)
             && (intervalShiftsSnapshot>0)
-            && (intervalShiftsSnapshot<(stopFirstShiftTime.first-startFirstShiftTime.first)*24)
-            && Shift::check(startT,stopT)){
+            //interval snapshot must be less then size of shift time
+            && (intervalShiftsSnapshot*60*1000 < startT.msecsTo(stopT))
+            //and common columns must be less then optimal count
+            && (intervalShiftsSnapshot*60*1000*optimalColumnCount >= startT.msecsTo(stopT))
+            && (Shift::count = Shift::check(startT,stopT))){
 
         int it = 0;
         QTime startCurrentShift(startT), stopCurrentShift(stopT);
@@ -341,7 +364,7 @@ bool ShiftManager::readShiftsInfo(const QJsonObject &obj)
 
         Q_ASSERT(stepTime > 0);
 
-        while(++it <= countShifts){
+        while(++it <= Shift::count){
             Shift sh;
             sh.start = startCurrentShift;
             sh.stop = stopCurrentShift;
@@ -353,21 +376,21 @@ bool ShiftManager::readShiftsInfo(const QJsonObject &obj)
             startCurrentShift = stopCurrentShift;
             stopCurrentShift = stopCurrentShift.addMSecs(stepTime);
 
-            qDebug() << Q_FUNC_INFO << "Step Time: " << stepTime/(1000 * 60)
-                                    << "Start: " << sh.start.hour() << ":"<<sh.start.minute()
-                                    << "Stop:" << sh.stop.hour() << ":"<<sh.stop.minute();
+            qDebug() << "Shift №" << it << "Step Time: " << stepTime/(1000 * 60)
+                                        << "Start: " << sh.start.hour() << ":"<<sh.start.minute()
+                                        << "Stop:" << sh.stop.hour() << ":"<<sh.stop.minute();
             if(startT == startCurrentShift)
                 break;
         }
 
         Shift::intervalInMinutes = intervalShiftsSnapshot;
-        Shift::count = countShifts;
+        //Shift::count = countShifts;
 
         //sort in ascending order
         std::sort(m_shifts.begin(),m_shifts.end(),[&](const Shift& first,const Shift& second)
             {return first.start.msecsSinceStartOfDay() < second.start.msecsSinceStartOfDay();}
         );
-        qDebug() << Q_FUNC_INFO << ", first shift time after qsort:" << m_shifts.first().start.hour();
+        //qDebug() << Q_FUNC_INFO << ", first shift time after qsort:" << m_shifts.first().start.hour();
         return true;
     }
     return false;
@@ -396,6 +419,9 @@ void ShiftManager::read(const QJsonObject &&object)
         QJsonValue countTagsOnPage = outputObj["countTagsOnPage"];
         if(!countTagsOnPage.isUndefined())
             m_DocWorker->setCountTagsOnPage(countTagsOnPage.toInt());
+        QJsonValue pathVal = outputObj["path"];
+        if(!pathVal.isUndefined() && !pathVal.toString().isEmpty() )
+            m_outputPath = pathVal.toString();
     }
     //parse "options" group
     QJsonObject optionsObj = configGroups["options"];
@@ -428,7 +454,13 @@ void ShiftManager::read(const QJsonObject &&object)
         QJsonValue dateTimeFormatObjVal = optionsObj["specDateTimeFormat"];
         if(!dateTimeFormatObjVal.isUndefined()){
             m_dateTimeformat = dateTimeFormatObjVal.toString();
-        }
+        }       
+    }
+    //node
+    QJsonValue NodeObjVal = optionsObj["node"];
+    if(!NodeObjVal.isUndefined()){
+        m_Node = NodeObjVal.toString();
+        m_DocWorker->setNodeName(m_Node);
     }
     if(m_tagsNamesList.isEmpty())
         throw SYS::Error("Tags names not recognized, check config file");
@@ -438,8 +470,9 @@ void ShiftManager::read(const QJsonObject &&object)
 
 QString ShiftManager::prepareMainQuery(QDateTime requestedDateTime)
 {
-    int CurshiftIndex = getShiftIndexOnReqTime(requestedDateTime.time());
-    auto& prevShift = (CurshiftIndex==0) ? m_shifts.last() : m_shifts.at(CurshiftIndex-1);
+    m_curShiftIndex = getShiftIndexOnReqTime(requestedDateTime.time());
+    auto& prevShift = (m_curShiftIndex==0) ? m_shifts.last() : m_shifts.at(m_curShiftIndex-1);
+    m_prevShiftIndex = m_shifts.indexOf(prevShift);
 
     return m_DBAdapter->prepareQuery(DBAdapter::QueryTypes::TagValuesList,
                                             QVariantMap {{"taglist",QVariant::fromValue(m_tagsNamesList)},
@@ -470,13 +503,13 @@ void ShiftManager::onError(SYS::QError err)
 
 void ShiftManager::onQueryResult(SQLWorker::QueryTypes id, QSqlQuery query)
 {
-    if(!query.isValid()) {
-        onError(SYS::QError(EventLogScope::warning,
-                            QError::Type::InternalError, "Query must be valid in current state"));
+    if(!query.isActive()) {
+        onError(SYS::QError(EventLogScope::error,
+                            QError::Type::InternalError, "Query must be active in current state"));
         return;
     }
-    if(!m_DocWorker.isNull()) {
-        onError(SYS::QError(EventLogScope::warning,
+    if(m_DocWorker.isNull()) {
+        onError(SYS::QError(EventLogScope::error,
                             QError::Type::InternalError, "Doc creator must be valid in current state"));
         return;
     }
@@ -485,7 +518,7 @@ void ShiftManager::onQueryResult(SQLWorker::QueryTypes id, QSqlQuery query)
     switch (SYS::toUType(id)) {
     case SYS::toUType(SQLWorker::QueryTypes::TagDescription):
         SYS_LOG(EventLogScope::notification,"Tag description query get by Shift Manager")
-        m_DocWorker->setVertHeaderTableTitles(m_DBAdapter->getTagDescr(std::move(query)));
+        m_DocWorker->setVertHeaderTableTitles(m_DBAdapter->getTagDescr(std::move(query), m_tagsNamesList));
         setSqlQueriesBits(sqlQueriesBits() | SYS::toUType(QueriesResult::TagDescriptionSuccess));
         break;
 
@@ -500,40 +533,49 @@ void ShiftManager::onQueryResult(SQLWorker::QueryTypes id, QSqlQuery query)
     }
 
     //0000 0011 - both queries exec
-    if(sqlQueriesBits() & (SYS::toUType(QueriesResult::TagDescriptionSuccess) | SYS::toUType(QueriesResult::TagValuesSuccess)))
+    if((sqlQueriesBits() & (SYS::toUType(QueriesResult::TagDescriptionSuccess)))
+            && (sqlQueriesBits() & SYS::toUType(QueriesResult::TagValuesSuccess))){
         emit workSqlWorkerSuccess();
-    else
+    } else
         onWorkSqlWorkerState();
 }
 
-void ShiftManager::onDocResult(QTextDocument* doc)
+void ShiftManager::onDocResult()
 {
-    if(doc->isEmpty()){
+    if(m_lastDoc.isEmpty()){
         onError(SYS::QError(EventLogScope::error,
                             QError::Type::InternalError,
                             "Document must be filling in current state"));
         return;
     }
-    m_lastDoc = doc;
     emit workDocWorkerSuccess();
 }
 
 void ShiftManager::start()
 {
+    //update timer set to diff between shifts + printTimeOffset interval
+    auto& shift = m_shifts.first();
+    m_everyShiftTimer.setInterval(shift.start.msecsTo(shift.stop)
+                                  + printTimeOffset*60*1000);
+    connect(&m_everyShiftTimer,&QTimer::timeout,this,
+            [=](){this->setNeedUpdate(true);});
+    m_everyShiftTimer.start();
     stateMachine.start();
 }
 
-bool ShiftManager::Shift::check(QTime& start,QTime& stop){
+int ShiftManager::Shift::check(QTime& start,QTime& stop){
     auto diffInMinutes = start.msecsTo(stop)/(1000*60);
+    //int count = 0;
     if(diffInMinutes < 1){
-        SYS_LOG(EventLogScope::warning, "Finished time of shift less then start or diff between them less 1 minute.")
+        SYS_LOG(EventLogScope::warning, "Finished time of shift less then start or diff between them less then 1 minute.")
         //if stop time less then start
         //diffInMinutes = 24*60 - stop.msecsTo(start)/(1000*60);
-        return false;
+        return 0;
     }
     if((24*60 % diffInMinutes) != 0){
         SYS_LOG(EventLogScope::warning, "Counts of shifts not filling all day.")
-        return false;
+        return 0;
+    } else {
+        return ((24*60) / diffInMinutes);
     }
-    return true;
 }

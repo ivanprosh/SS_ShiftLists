@@ -1,3 +1,7 @@
+PRECOMPILED_HEADER = $${PWD}/prh.h
+
+CONFIG += precompile_header
+
 SOURCES += \
     $${PWD}/shiftmanager.cpp \
     $${PWD}/sqlworker.cpp \
@@ -5,7 +9,8 @@ SOURCES += \
     $${PWD}/logger.cpp \
     $${PWD}/singleton.cpp \
     $${PWD}/htmlshiftworker.cpp \
-    $${PWD}/dbadapter.cpp
+    $${PWD}/dbadapter.cpp \
+    $$PWD/sqlthread.cpp
 
 HEADERS += \
     $${PWD}/shiftmanager.h \
@@ -17,6 +22,8 @@ HEADERS += \
     $${PWD}/htmlshiftworker.h \
     $${PWD}/dbadapter.h \
     $${PWD}/typemsg.h \
-    $${PWD}/devpolicies.h
+    $${PWD}/devpolicies.h \
+    $$PWD/prh.h \
+    $$PWD/sqlthread.h
 
 #message($${PWD}/)

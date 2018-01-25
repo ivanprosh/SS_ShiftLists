@@ -4,8 +4,6 @@
 
 #include <QSqlQuery>
 #include <QSqlRecord>
-#include <QVariant>
-
 
 const QHash<DBAdapter::QueryTypes,QStringList> DBAdapter::keys{
     {DBAdapter::QueryTypes::TagDescriptionList,{"taglist"}},
@@ -21,6 +19,7 @@ WonderwareDBAdapter::WonderwareDBAdapter():DBAdapter(
     {QueryTypes::TagValuesList,"SET QUOTED_IDENTIFIER OFF "
                                         "SELECT * FROM OPENQUERY(INSQL, \"SELECT DateTime, %1 FROM WideHistory "
                                         "WHERE wwResolution = %2 " //3600000 - 1 hour interval
+                                        "AND wwRetrievalMode = \'Cyclic\'"
                                         "AND wwQualityRule = \'Extended\' "
                                         "AND wwVersion = \'Latest\' "
                                         "AND DateTime >= \'%3\' "
@@ -29,44 +28,62 @@ WonderwareDBAdapter::WonderwareDBAdapter():DBAdapter(
 {
 }
 
-QVector< QPair<QString,QString> > WonderwareDBAdapter::getTagDescr(QSqlQuery &&query)
+QVector< QPair<QString,QString> > WonderwareDBAdapter::getTagDescr(QSqlQuery &&query, QStringList orderKeys)
 {
-    if(!query.isValid()){
-        SYS_LOG_WINDOW(EventLogScope::warning,QObject::tr("Tag Description query is not valid").toUtf8(),&SYS::warning)
+    if(!query.isActive()){
+        SYS_LOG_WINDOW(EventLogScope::warning,QObject::tr("Tag Description query is not active").toUtf8(),&SYS::warning)
         return QVector< QPair<QString,QString> >();
     }
 
     QSqlRecord rec = query.record();
-    QVector< QPair<QString,QString> > result;
+    QVector< QPair<QString,QString> > result(orderKeys.size(), QPair<QString,QString>("Undefinied",""));
 
     while(query.next()) {
+        QString tag = query.value(rec.indexOf("Tag")).toString();
         QString descr = query.value(rec.indexOf("Description")).toString();
         QString unit = query.value(rec.indexOf("Unit")).toString();
 
-        result.append(qMakePair(query.value(rec.indexOf("Tag")).toString(),
-                                unit.isEmpty() ? descr : descr.append(QString(" (%1)").arg(unit))));
+        if(orderKeys.contains(tag))
+            result[orderKeys.indexOf(tag)] = qMakePair(tag, unit.isEmpty() ? descr : descr.append(QString(" (%1)").arg(unit)));
     }
+    query.finish();
     return result;
 }
 
 QVector<QVector<float> > WonderwareDBAdapter::getTagValuesMap(QSqlQuery &&query, QStringList& horizontalHeader)
 {
-    if(!query.isValid())
+    if(!query.isActive())
         return QVector<QVector<float> >();
         //SYS_LOG_WINDOW(EventLogScope::warning,qPrintable(QObject::tr("Tag values query is not valid")),&SYS::warning)
     QSqlRecord rec = query.record();
-    QVector<QVector<float> > resultMap;
+    //count of rows = count of tags
+    QVector<QVector<float> > resultMap(rec.count() - 1);
+    //resultMap.reserve(100);
+    //resultMap.resize(rec.count() - 1);
+
     horizontalHeader.clear();
-    int row = 0;
-    while (query.next()){
-        //0 - DateTime column
-        horizontalHeader.append(query.value(rec.indexOf("DateTime")).toDateTime().toString("hh:mm"));
-        for(int column=1; column<rec.count(); ++column){
-            resultMap[row][column-1] = query.value(column).toFloat();
+    int column = 0;
+    try {
+        while (query.next()){
+            //column - DateTime
+            horizontalHeader.append(query.value(rec.indexOf("DateTime")).toDateTime().toString("hh:mm"));
+            for(int row=1; row<rec.count(); ++row){
+                //resultMap.last().append(query.value(column).toFloat());
+                while(resultMap.at(row-1).size() <= column){
+                    resultMap[row-1].append(0.0);
+                }
+                resultMap[row-1][column] = query.value(row).toFloat();
+            }
+            ++column;
         }
-        ++row;
+        query.finish();
+        return resultMap;
     }
-    return resultMap;
+    catch (const std::out_of_range& oor) {
+        emit error(SYS::QError(EventLogScope::error, SYS::QError::Type::InternalError,
+                               QString("Query Tag values result problem, Error: %1").arg(oor.what())));
+        return QVector<QVector<float> >();
+    }
 }
 
 QString WonderwareDBAdapter::prepareQuery(DBAdapter::QueryTypes type, QVariantMap&& params)

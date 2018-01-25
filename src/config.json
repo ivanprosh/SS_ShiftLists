@@ -1,4 +1,5 @@
 ﻿{
+    "node": "ГПА1",
 	"server": {
         "type" : "MSSQL",
         "driver" : "QODBC",
@@ -10,17 +11,15 @@
 	},
 
 	"output": {
-		"format" : "html",
-        "countTagsOnPage" : 20,
-		"path" : ""		
+        "format" : "html",
+        "countTagsOnPage" : 6
     },
 
 	"options": {
         "shift" : {
            "start" : "8:00",
-           "stop" : "20:00",
-           "count" : 2,
-           "interval" : 60
+           "stop" : "8:02",
+           "interval" : 1
         },
         "scada" : "wonderware",
         "printTimeOffset" : 0,
@@ -30,6 +29,18 @@
     "tags" : [
        "Reactor_001.ReactTemp",
        "Reactor_001.ReactLevel",
-       "StorageTank_001.ProdLevel"
+       "StorageTank_001.ProdLevel",
+       "Reactor_002.ReactTemp",
+       "Reactor_002.ReactLevel",
+       "StorageTank_002.ProdLevel",
+       "Reactor_003.ReactTemp",
+       "Reactor_003.ReactLevel",
+       "StorageTank_003.ProdLevel",
+       "Reactor_004.ReactTemp",
+       "Reactor_004.ReactLevel",
+       "StorageTank_004.ProdLevel",
+       "Reactor_005.ReactTemp",
+       "Reactor_005.ReactLevel",
+       "StorageTank_005.ProdLevel"
     ]
 }

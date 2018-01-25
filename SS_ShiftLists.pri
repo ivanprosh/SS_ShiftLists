@@ -1,8 +1,13 @@
 include(boost.pri)
 
 QT += core sql widgets printsupport
+#QT += webenginewidgets
 
-CONFIG += c++11 console
+*msvc*{
+    #QMAKE_CXXFLAGS += -MP
+}
+
+CONFIG += c++14 console
 CONFIG -= app_bundle
 
 CONFIG(debug, debug|release){

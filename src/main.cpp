@@ -120,7 +120,7 @@ using namespace SYS;
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
-    QApplication::setApplicationName("Shift lists print fo Wonderware projects");
+    QApplication::setApplicationName("Shift lists print fo 3rd party scada projects");
     QApplication::setApplicationVersion("1.0");
 
     //register type for use in slot-signal model
@@ -146,9 +146,9 @@ int main(int argc, char *argv[])
         return 0;
     }
 
+    qDebug() << "Main thr: " << qApp->thread()->currentThreadId();
     //Init timers and other connections
     shiftManager.start();
 
-    //return 0;
     return a.exec();
 }

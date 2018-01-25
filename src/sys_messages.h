@@ -4,14 +4,9 @@
 #include "sys_error.h"
 
 #include <QLoggingCategory>
-#include <QApplication>
-#include <QByteArray>
-#include <QList>
+
 #include <QMessageBox>
 #include <QSet>
-#include <QScopedPointer>
-#include <QString>
-#include <QVector>
 #include <QMetaEnum>
 
 #ifdef Q_CC_MSVC

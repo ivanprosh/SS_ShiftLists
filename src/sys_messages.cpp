@@ -5,7 +5,6 @@
 #include <QPushButton>
 #include <QRegExp>
 #include <QSet>
-#include <QStringList>
 #include <QTextStream>
 
 namespace SYS {

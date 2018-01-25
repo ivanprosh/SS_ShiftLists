@@ -1,7 +1,6 @@
 #ifndef SQLWORKER_H
 #define SQLWORKER_H
 
-#include <QVariantMap>
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include "sys_error.h"

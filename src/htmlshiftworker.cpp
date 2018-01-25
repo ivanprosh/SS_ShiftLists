@@ -3,27 +3,29 @@
 
 #include <QTextDocument>
 
-HTMLShiftWorker::HTMLShiftWorker(QObject *parent) : QObject(parent), m_countTagsOnPage(10)
+HTMLShiftWorker::HTMLShiftWorker(QObject *parent) : QObject(parent), m_countTagsOnPage(10), m_shNumber(1)
 {
     _logger::Instance().LogEvent(EventLogScope::notification, "Create new HTML Docworker instance");
 }
 
-void HTMLShiftWorker::process()
+void HTMLShiftWorker::process(QString &docString)
 {
     if(m_horheaderTableTitles.isEmpty() || m_vertheaderTableTitles.isEmpty()
             || m_valuesMap.isEmpty() || m_valuesMap.at(0).isEmpty() ||
             m_horheaderTableTitles.size() != m_valuesMap.at(0).size() ||
             m_vertheaderTableTitles.size() != m_valuesMap.size()){
+        qDebug() << m_valuesMap.size() << " " << m_valuesMap.at(0).size() << " " << m_vertheaderTableTitles.size() << " "
+                 << m_horheaderTableTitles.size();
         emit error(SYS::QError(EventLogScope::error,
                                SYS::QError::Type::DataSourceError,
                                QString("HTML Doc worker hasn't enough data for analizing or data incorrect")));
         return;
     }
-    m_doc.clear();
+    docString.clear();
     pages.clear();
     for(int i = 0; i < m_valuesMap.size(); i+=m_countTagsOnPage)
         pages << HTMLOnePage();
-    populateDocument(m_doc);
+    populateDocument(docString);
 }
 QString HTMLShiftWorker::getHtmlFromFile(const QString& filename){
     QFile fileHtml(filename);
@@ -55,6 +57,9 @@ QString HTMLShiftWorker::itemsAsHtmlTable(int page)
     for (int row = 0; row < m_countTagsOnPage; ++row) {
         //if (i % m_valuesMap.at(0).size() == 0)
         int indexInMap = row + m_countTagsOnPage*page;
+        if(indexInMap == m_valuesMap.size())
+            break;
+
         html += "<tr>\n";
         html += QString("<td align='center'>%1</td>\n").arg(m_vertheaderTableTitles.at(indexInMap).second);
         for(int column = 0; column < m_valuesMap.at(indexInMap).size(); ++column){
@@ -73,8 +78,12 @@ QString HTMLShiftWorker::pageAsHtml(int page)
     //const HTMLOnePage &thePage = pages.at(page);
 
     QString html;
+    QString headerString(getHtmlFromFile(QApplication::applicationDirPath() + "/pageheader.html"));
 
-    html += getHtmlFromFile(QApplication::applicationDirPath() + "/header.html");
+    html += headerString.arg(m_NodeName)
+                        .arg(m_curIndexShift)
+                        .arg(m_horheaderTableTitles.first())
+                        .arg(m_horheaderTableTitles.last());
     //html += QString("<h1 align='center'>%1</h1>\n")
     //                .arg(thePage.title.toHtmlEscaped());
     html += "<p>";
@@ -85,18 +94,25 @@ QString HTMLShiftWorker::pageAsHtml(int page)
 
     return html;
 }
-void HTMLShiftWorker::populateDocument(QTextDocument &doc)
+void HTMLShiftWorker::populateDocument(QString &docString)
 {
-    QString html("<html>\n<body>\n");
+    QString html("<html>\n");
+
+    html += getHtmlFromFile(QApplication::applicationDirPath() + "/header.html");
+    html += "<body style='font-family: \"Tahoma\"'>\n";
 
     for (int page = 0; page < pages.count(); ++page) {
+        html += "<div class=\"page\">";
         html += pageAsHtml(page);
         if (page + 1 < pages.count())
             html += "<br style='page-break-after:always;'/>\n";
+        else
+            html += getHtmlFromFile(QApplication::applicationDirPath() + "/footer.html");
+        html += "</div>";
     }
 
-    html += getHtmlFromFile(QApplication::applicationDirPath() + "/footer.html");
     html += "</body>\n</html>\n";
-    doc.setHtml(html);
-    emit docResult(&doc);
+
+    docString = html;
+    emit docFinished();
 }

@@ -2,11 +2,8 @@
 #include "logger.h"
 #include "devpolicies.h"
 
-#include <QDebug>
 #include <QSqlError>
 #include <QSqlRecord>
-#include <QHash>
-#include <QString>
 #include <QTimer>
 //#include <boost/log/common.hpp>
 //#include <boost/log/sources/logger.hpp>
@@ -57,6 +54,8 @@ SQLWorker::~SQLWorker()
 
 void SQLWorker::connect()
 {
+     qDebug() << "SQLWorker thr: " << QThread::currentThreadId();
+
     if(m_connString.isEmpty())
         return;
 

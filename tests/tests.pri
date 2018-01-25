@@ -1,4 +1,4 @@
-QT = core testlib
+QT += core testlib
 QT -= gui
 
 CONFIG -= app_bundle

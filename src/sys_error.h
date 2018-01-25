@@ -2,7 +2,7 @@
 #define SYS_ERROR_H
 
 #include <exception>
-#include <QString>
+
 #include <QMetaType>
 
 #include "typemsg.h"
@@ -54,6 +54,9 @@ public:
     }
     void clear() {
         charArray.clear();
+    }
+    bool isEmpty(){
+        return charArray.isEmpty();
     }
     /*
     QError& operator=(const QError& right) {
