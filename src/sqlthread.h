@@ -2,7 +2,7 @@
 #define SQLTHREAD_H
 
 #include <QThread>
-#include "sys_error.h"
+//#include "sys_error.h"
 #include "sqlworker.h"
 
 class SQLWorker;

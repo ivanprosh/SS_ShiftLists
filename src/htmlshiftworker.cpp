@@ -1,7 +1,7 @@
 #include "logger.h"
 #include "htmlshiftworker.h"
 
-#include <QTextDocument>
+//#include <QTextDocument>
 
 HTMLShiftWorker::HTMLShiftWorker(QObject *parent) : QObject(parent), m_countTagsOnPage(10), m_shNumber(1)
 {
@@ -81,7 +81,7 @@ QString HTMLShiftWorker::pageAsHtml(int page)
     QString headerString(getHtmlFromFile(QApplication::applicationDirPath() + "/pageheader.html"));
 
     html += headerString.arg(m_NodeName)
-                        .arg(m_curIndexShift)
+                        .arg(m_curIndexShift + 1)
                         .arg(m_horheaderTableTitles.first())
                         .arg(m_horheaderTableTitles.last());
     //html += QString("<h1 align='center'>%1</h1>\n")

@@ -26,4 +26,4 @@ HEADERS += \
     $$PWD/prh.h \
     $$PWD/sqlthread.h
 
-#message($${PWD}/)
+#message($${PWD})

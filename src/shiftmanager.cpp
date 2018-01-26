@@ -384,13 +384,11 @@ bool ShiftManager::readShiftsInfo(const QJsonObject &obj)
         }
 
         Shift::intervalInMinutes = intervalShiftsSnapshot;
-        //Shift::count = countShifts;
 
         //sort in ascending order
         std::sort(m_shifts.begin(),m_shifts.end(),[&](const Shift& first,const Shift& second)
             {return first.start.msecsSinceStartOfDay() < second.start.msecsSinceStartOfDay();}
         );
-        //qDebug() << Q_FUNC_INFO << ", first shift time after qsort:" << m_shifts.first().start.hour();
         return true;
     }
     return false;
@@ -457,7 +455,7 @@ void ShiftManager::read(const QJsonObject &&object)
         }       
     }
     //node
-    QJsonValue NodeObjVal = optionsObj["node"];
+    QJsonValue NodeObjVal = object["node"];
     if(!NodeObjVal.isUndefined()){
         m_Node = NodeObjVal.toString();
         m_DocWorker->setNodeName(m_Node);

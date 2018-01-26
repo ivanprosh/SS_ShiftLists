@@ -17,8 +17,8 @@
 
 	"options": {
         "shift" : {
-           "start" : "8:00",
-           "stop" : "8:02",
+           "start" : "11:01",
+           "stop" : "11:04",
            "interval" : 1
         },
         "scada" : "wonderware",

@@ -1,16 +1,18 @@
 #ifndef DEVPOLICIES_H
 #define DEVPOLICIES_H
 
-#include <QTextDocument>
-#include <QFile>
 #include <QPrinter>
 #include <QPrinterInfo>
+
+/*
+#include <QTextDocument>
+#include <QFile>
 #include <QTimer>
 #include <QDebug>
 #include <QEventLoop>
 #include <QApplication>
 #include <QThread>
-
+*/
 #include "sys_error.h"
 
 class DevPolicy : public QObject
@@ -62,6 +64,8 @@ class PrinterDevPolicy : public DevPolicy
 public:
     virtual void process(QString filename,
                             const QString& doc) override{
+        Q_UNUSED(doc)
+        Q_UNUSED(filename)
 
         QPrinter printer(QPrinterInfo::defaultPrinter(),
                          QPrinter::HighResolution);
@@ -73,7 +77,6 @@ public:
         }
         printer.setPaperSize(QPrinter::A4);
         printer.setOrientation(QPrinter::Landscape);
-        //doc->print(&printer);
 
         emit success();
     }
@@ -88,16 +91,18 @@ public:
     }
     virtual void process(QString filename,
                             const QString& doc) override{
+        Q_UNUSED(doc)
+
         //connect(&page, &QWebEnginePage::loadFinished, this, &PdfDevPolicy::onLoad );
         lastError.clear();
-        //QPrinter printer(QPrinter::HighResolution);
-//        printer.setPaperSize(QPrinter::A4);
-//        printer.setOrientation(QPrinter::Landscape);
-          filename.append(".pdf");
-//        printer.setOutputFileName(filename);
-//        printer.setOutputFormat(QPrinter::PdfFormat);
 
-        //page.setHtml(doc);
+        filename.append(".pdf");
+
+/*
+ *        not success, webpage don't load, but load before separated thread created (it's my opinion)
+ *        This method start from UI thread and it's not the point
+ */
+//        page.setHtml(doc);
 //        QEventLoop loop;
 //        QTimer timeouttimer;
 //        timeouttimer.setSingleShot(true);
@@ -118,10 +123,6 @@ public:
 //            emit error(lastError);
 //            return;
 //        }
-
-        //page.print(&printer,[=,&result](bool ok){result=ok; qDebug() << filename
-        //                                                             << ": print ok is " << ok;});
-        //page.printToPdf(filename);
 
     }
 public slots:

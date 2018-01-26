@@ -3,6 +3,7 @@ include(../SS_ShiftLists.pri)
 include(src.pri)
 
 SOURCES += main.cpp
+TARGET = ss_shiftLists
 
 QT += gui
 
@@ -28,3 +29,6 @@ DISTFILES += \
 deployment.path = $$OUT_PWD/$${BUILD_TYPE}
 deployment.files += $${DISTFILES}
 INSTALLS += deployment
+
+#icon
+RC_ICONS += list.ico

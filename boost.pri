@@ -17,6 +17,9 @@ CONFIG(debug, debug|release){
 LIBS += -L$${BOOST_LIBS_PATH}
 
 win32 {
+    #define for shared linking boost::log
+    DEFINES += BOOST_LOG_DYN_LINK
+    #
     LIBS += -llibboost_log-vc140-mt$${BOOST_LIB_FLAGS}-x32-1_66
 }
 unix:!macx:{
