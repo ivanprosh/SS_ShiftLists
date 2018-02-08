@@ -138,7 +138,7 @@ public slots:
         emit success();
     }
 private:
-    //QWebEnginePage& page;
+    //QWebEnginePage page;
     QPrinter printer;
 };
 

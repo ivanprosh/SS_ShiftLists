@@ -48,7 +48,7 @@ SQLWorker::SQLWorker(const QVariantMap &connPar): QObject(),
 
 SQLWorker::~SQLWorker()
 {
-    SYS_LOG(EventLogScope::notification,"SQL worker dsrctr");
+    SYS_LOG(EventLogScope::notification,"SQL worker destructor");
     m_database.close();
 }
 
@@ -82,11 +82,11 @@ bool SQLWorker::exec(QueryTypes id, QString queryString)
 {
     QSqlQuery query;
 
-    SYS_LOG(EventLogScope::notification,
+    SYS_LOG(EventLogScope::normal,
             QString("Sending query: %1").arg(queryString).toUtf8());
 
     if(query.exec(queryString)){
-        SYS_LOG(EventLogScope::notification, "Query exec success.");
+        SYS_LOG(EventLogScope::normal, "Query exec success.");
         emit queryResult(id,query);
         return true;
     }

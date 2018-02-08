@@ -5,7 +5,7 @@
 
 HTMLShiftWorker::HTMLShiftWorker(QObject *parent) : QObject(parent), m_countTagsOnPage(10), m_shNumber(1)
 {
-    _logger::Instance().LogEvent(EventLogScope::notification, "Create new HTML Docworker instance");
+    _logger::Instance().LogEvent(EventLogScope::normal, "Create new HTML Docworker instance");
 }
 
 void HTMLShiftWorker::process(QString &docString)

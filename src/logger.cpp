@@ -48,6 +48,15 @@ write_footer(sinks::text_file_backend::stream_type& file)
     file << "***** Stop *****" << std::endl;
 }
 
+void EventLog::setFilter(const severity_level level)
+{
+    // Access the core
+    //boost::shared_ptr<boost::log::core> core = boost::log::core::get();
+    boost::log::core::get()->set_filter(
+         expr::attr< severity_level >("Severity").or_default(normal) >= level
+    );
+}
+
 EventLog::EventLog()
 {
     namespace fs = boost::filesystem;
@@ -118,9 +127,9 @@ EventLog::EventLog()
     //auto attr = attrs::constant<unsigned int>(99);
     //m_logger.add_attribute("ID", attr);
 
-    //sink->set_filter( expr::attr<unsigned int>("ID") == 99 );
-    //sink->set_filter(
-    //      expr::attr< severity_level >("Severity").or_default(normal) >= warning);
+     //sink->set_filter( expr::attr<unsigned int>("ID") == 99 );
+     //sink->set_filter(
+     //     expr::attr< severity_level >("Severity").or_default(normal) >= warning);
 
      // format of the log records when streamed
      sink->set_formatter(

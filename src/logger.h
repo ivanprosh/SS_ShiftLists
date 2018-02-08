@@ -40,6 +40,7 @@ public:
         BOOST_LOG_SEV(m_logger, level) << message;
         window(nullptr,"Shift print Application",message,QString());
     }
+    void setFilter(const severity_level level);
 
 protected:
     EventLog();

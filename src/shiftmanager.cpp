@@ -68,7 +68,7 @@ ShiftManager::~ShiftManager()
 
 void ShiftManager::onStartState()
 {
-    SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("start").toUtf8())
+    SYS_LOG(EventLogScope::normal,QString("In %1 state").arg("start").toUtf8())
 
     //if critical error set before last cycle or app is not permanent
     if(isCriticalErrorSet() || (isFinishedCycle() && !isPermanent)){
@@ -91,7 +91,7 @@ void ShiftManager::onStartState()
 
 void ShiftManager::onErrorState()
 {
-    SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("error").toUtf8())
+    SYS_LOG(EventLogScope::normal,QString("In %1 state").arg("error").toUtf8())
     while(!m_errors.isEmpty()) {
         QString logmsg("%1-%2");
         auto err = m_errors.dequeue();
@@ -132,7 +132,7 @@ void ShiftManager::onCreateSqlWorkerState()
 {
     if(!m_SQLWorkerThr.isNull() && !m_SQLWorkerThr->isFinished()){
         if(needRecreateSQLWorker()) {
-            SYS_LOG(EventLogScope::notification, "Recreate new SQL worker instance");
+            SYS_LOG(EventLogScope::normal, "Recreate new SQL worker instance");
             QMetaObject::invokeMethod(m_SQLWorkerThr.data(), "quit", Qt::QueuedConnection);
             setNeedRecreateSQLWorker(false);
 
@@ -159,7 +159,7 @@ void ShiftManager::onCreateSqlWorkerState()
             return;
         }
     }
-    SYS_LOG(EventLogScope::notification, "Create new SQL worker instance");
+    SYS_LOG(EventLogScope::normal, "Create new SQL worker instance");
 
     m_SQLWorkerThr.reset(new SqlThread(configGroups.value("server").toVariantMap()));
 
@@ -195,7 +195,7 @@ void ShiftManager::onCreateSqlWorkerState()
 
 void ShiftManager::onConnectSqlWorkerState()
 {   
-    SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("connect").toUtf8())
+    SYS_LOG(EventLogScope::normal,QString("In %1 state").arg("connect").toUtf8())
     if(m_SQLWorkerThr.isNull())
             onError(SYS::QError(EventLogScope::warning,
                                 QError::Type::InternalError, "Thread must exist in connection state"));
@@ -208,7 +208,7 @@ void ShiftManager::onConnectSqlWorkerState()
 
 void ShiftManager::onWorkSqlWorkerState()
 {
-    SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("sql work").toUtf8())
+    SYS_LOG(EventLogScope::normal,QString("In %1 state").arg("sql work").toUtf8())
     if(!(sqlQueriesBits() & SYS::toUType(QueriesResult::TagDescriptionSuccess)))
         emit queryExec(SQLWorker::QueryTypes::TagDescription, prepareTagDescriptionQuery());
     else if(!(sqlQueriesBits() & SYS::toUType(QueriesResult::TagValuesSuccess)))
@@ -219,7 +219,7 @@ void ShiftManager::onWorkSqlWorkerState()
 
 void ShiftManager::onWorkDocWorkerState()
 {
-    SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("create doc").toUtf8())
+    SYS_LOG(EventLogScope::normal,QString("In %1 state").arg("create doc").toUtf8())
     if(m_DocWorker.isNull()) {
         onError(SYS::QError(EventLogScope::error,
                             QError::Type::InternalError, "Doc creator must be valid in current state"));
@@ -232,7 +232,7 @@ void ShiftManager::onWorkDocWorkerState()
 
 void ShiftManager::onWorkDevWorkerState()
 {
-    SYS_LOG(EventLogScope::notification,QString("In %1 state").arg("save/print doc").toUtf8())
+    SYS_LOG(EventLogScope::normal,QString("In %1 state").arg("save/print doc").toUtf8())
     if(m_DevWorker.isNull()){
         onError(SYS::QError(EventLogScope::warning,
                             QError::Type::InternalError, "Device creator must be valid in current state"));
@@ -327,7 +327,7 @@ void ShiftManager::read(const QString &filename)
     if (!file.open(QIODevice::ReadOnly))
         throw SYS::Error(filename + ":" + file.errorString());
 
-    SYS_LOG(EventLogScope::notification, "Config file opened")
+    SYS_LOG(EventLogScope::normal, "Config file opened")
 
     QByteArray saveData = file.readAll();
     QJsonParseError err;
@@ -418,7 +418,9 @@ void ShiftManager::read(const QJsonObject &&object)
         if(!countTagsOnPage.isUndefined())
             m_DocWorker->setCountTagsOnPage(countTagsOnPage.toInt());
         QJsonValue pathVal = outputObj["path"];
-        if(!pathVal.isUndefined() && !pathVal.toString().isEmpty() )
+        if(!pathVal.isUndefined() && !pathVal.toString().isEmpty()
+                //file path not passed by command args
+                && m_outputPath == QApplication::applicationDirPath())
             m_outputPath = pathVal.toString();
     }
     //parse "options" group
@@ -452,7 +454,14 @@ void ShiftManager::read(const QJsonObject &&object)
         QJsonValue dateTimeFormatObjVal = optionsObj["specDateTimeFormat"];
         if(!dateTimeFormatObjVal.isUndefined()){
             m_dateTimeformat = dateTimeFormatObjVal.toString();
-        }       
+        }
+        //log message filter
+        QJsonValue fltrMsgVal = optionsObj["logfilter"];
+        if(!fltrMsgVal.isUndefined()){
+            QString level = fltrMsgVal.toString();
+            if(EventLogScope::keys.contains(level))
+                _logger::Instance().setFilter(static_cast<EventLogScope::severity_level>(EventLogScope::keys.indexOf(level)));
+        }
     }
     //node
     QJsonValue NodeObjVal = object["node"];
@@ -463,7 +472,7 @@ void ShiftManager::read(const QJsonObject &&object)
     if(m_tagsNamesList.isEmpty())
         throw SYS::Error("Tags names not recognized, check config file");
 
-    SYS_LOG(EventLogScope::notification, "Config file parsed");
+    SYS_LOG(EventLogScope::normal, "Config file parsed");
 }
 
 QString ShiftManager::prepareMainQuery(QDateTime requestedDateTime)
@@ -515,13 +524,13 @@ void ShiftManager::onQueryResult(SQLWorker::QueryTypes id, QSqlQuery query)
 
     switch (SYS::toUType(id)) {
     case SYS::toUType(SQLWorker::QueryTypes::TagDescription):
-        SYS_LOG(EventLogScope::notification,"Tag description query get by Shift Manager")
+        SYS_LOG(EventLogScope::normal,"Tag description query get by Shift Manager")
         m_DocWorker->setVertHeaderTableTitles(m_DBAdapter->getTagDescr(std::move(query), m_tagsNamesList));
         setSqlQueriesBits(sqlQueriesBits() | SYS::toUType(QueriesResult::TagDescriptionSuccess));
         break;
 
     case SYS::toUType(SQLWorker::QueryTypes::TagValues):
-        SYS_LOG(EventLogScope::notification,"Tag values query get by Shift Manager")
+        SYS_LOG(EventLogScope::normal,"Tag values query get by Shift Manager")
         m_DocWorker->setValuesMap(m_DBAdapter->getTagValuesMap(std::move(query),headerTitles));
         m_DocWorker->setHorHeaderTableTitles(headerTitles);
         setSqlQueriesBits(sqlQueriesBits() | SYS::toUType(QueriesResult::TagValuesSuccess));

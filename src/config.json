@@ -23,7 +23,8 @@
         },
         "scada" : "wonderware",
         "printTimeOffset" : 0,
-        "specDateTimeFormat" : "yyyy-MM-dd hh:mm:ss.zz"
+        "specDateTimeFormat" : "yyyy-MM-dd hh:mm:ss.zz",
+        "logfilter" : "normal"
     },
 
     "tags" : [

@@ -12,40 +12,10 @@
 
 const QString defaultconfigFileName("config.json");
 
-
-const QString testQuery(
-        "SET QUOTED_IDENTIFIER OFF "
-        "DECLARE @OFFSET VARCHAR(10) "
-        "DECLARE @StartDate VARCHAR(100) "
-        "DECLARE @SelectString VARCHAR(5000) "
-        "SET @StartDate = \'\"\"9/1/2018 10:00:00:00\"\"\' "
-        "SET @OFFSET = -5 "
-        "SET @SelectString ="
-        "\'select * FROM OPENQUERY(INSQL, \"SELECT DateTime, [Reactor_001.ReactLevel], [Reactor_001.ReactTemp] "
-        " FROM WideHistory "
-        " WHERE wwRetrievalMode = \'\'Cyclic\'\' "
-        " AND wwResolution = 3600000 "
-        " AND wwQualityRule = \'\'Extended\'\' "
-        " AND wwVersion = \'\'Latest\'\' "
-        " AND DateTime >= DateAdd(HH,\' + @OFFSET + \',\' + @StartDate + \') "
-        " AND DateTime <= GetDate() "
-        " \")\' "
-        "EXEC(@SelectString) "
-        );
-
-/*
-const QString testQuery3(
-        "SET QUOTED_IDENTIFIER OFF "
-        "DECLARE @SelectString VARCHAR(5000) "
-        "SET @SelectString = "
-        "\'select * FROM OPENQUERY(INSQL, \"SELECT DateTime, [Reactor_001.ReactLevel] FROM WideHistory WHERE wwResolution = 3600000\")\' "
-        "EXEC(@SelectString) "
-        );
-*/
 class ShiftManager;
 
 void parseCommandLine(QCommandLineParser &parser, ShiftManager& controlClass){
-    parser.setApplicationDescription("Shift lists app helper");
+    parser.setApplicationDescription("SS_Shiftlists application command options helper");
     parser.addHelpOption();
     parser.addVersionOption();
     //parser.addPositionalArgument("source", QCoreApplication::translate("main", "Source file to copy."));
@@ -53,15 +23,24 @@ void parseCommandLine(QCommandLineParser &parser, ShiftManager& controlClass){
 
     parser.addOptions({
               {"p",
-                  QCoreApplication::translate("main", "Run in background permanent")},
+                  QCoreApplication::translate("main", "Run in background permanent and print shifts\n"
+                                                      "every time then shift finished with offset from config file.\n")},
               // An option with a value
               {{"f","filepath"},
-                  QCoreApplication::translate("main", "<path> to config file"),
+                  QCoreApplication::translate("main", "<path> to config file. Config file options help see in manual"),
+                  QCoreApplication::translate("main", "path")},
+              {{"o","outputpath"},
+                  QCoreApplication::translate("main", "<path> to output dir.\n"
+                                                      "Without this flag, output dir path= output.path options value from config file."),
                   QCoreApplication::translate("main", "path")},
               // An option with a value
               {{"t", "time-for-execute"},
-                  QCoreApplication::translate("main", "<Date Time> then app scanning shifts.\n"
-                                                      " Format - yyyy-MM-dd hh:mm:ss. (2018-01-12 18:00:23)"),
+                  QCoreApplication::translate("main", "<Date Time> then app printing shifts.\n"
+                                                      "Format - yyyy-MM-dd hh:mm. (2018-01-12 18:00)\n"
+                                                      "Must be used then you want to print out current shift.\n"
+                                                      "Example: you want to print shift data 2018-01-12 08:00 - 20:00.\n"
+                                                      "You may execute program with -t \"2018-01-12 20:01\" \n"
+                                                      ),
                   QCoreApplication::translate("main", "date time")},
           });
 
@@ -88,6 +67,12 @@ void parseCommandLine(QCommandLineParser &parser, ShiftManager& controlClass){
           controlClass.read(QGuiApplication::applicationDirPath() + "/" + defaultconfigFileName);
       }
 
+      if (parser.isSet("o")){
+          _logger::Instance().LogEvent(EventLogScope::notification,
+                                       QString("Read output file path from command args: %1").arg(parser.value("o")).toUtf8());
+          controlClass.m_outputPath = parser.value("o");
+      }
+
       if (parser.isSet("p")){
           _logger::Instance().LogEvent(EventLogScope::notification,
                                        "Set permanent execute mode");
@@ -97,7 +82,7 @@ void parseCommandLine(QCommandLineParser &parser, ShiftManager& controlClass){
       if (parser.isSet("t")){
           _logger::Instance().LogEvent(EventLogScope::notification,
                                         QString("Set specific execute time: %1").arg(parser.value("t")).toUtf8());
-          QDateTime dt = QDateTime::fromString(parser.value("t"));
+          QDateTime dt = QDateTime::fromString(parser.value("t"),"yyyy-MM-dd hh:mm");
           if(!dt.isValid())
               throw SYS::Error("Format DateTime (-t) not recognized, see --help");
           controlClass.setSpecDateTime(dt);

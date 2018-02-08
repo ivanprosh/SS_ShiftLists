@@ -82,6 +82,7 @@ public:
     QHash< QString, QJsonObject > configGroups;
     QString m_dateTimeformat;
     QString m_lastDoc;
+    QString m_outputPath;
     bool isPermanent;
     int printTimeOffset;
 
@@ -194,7 +195,7 @@ private:
     QDateTime m_specDateTime;
     QTimer m_everyShiftTimer;
     QString m_Node;
-    QString m_outputPath;
+
     //strategies
     QScopedPointer<SqlThread, QScopedPointerDeleteLater > m_SQLWorkerThr;
     QScopedPointer<HTMLShiftWorker> m_DocWorker;
